@@ -4,6 +4,7 @@ import type { EggState, IslandState } from '../types'
 export const STORAGE_PREFIX = 'money-island:'
 export const STORAGE_ERROR_EVENT = 'money-island:storage-error'
 export const STATE_KEY = 'money-island:v1'
+export const WISHES_KEY = 'wishes-v2'
 
 export class StorageWriteError extends Error {
   constructor(message: string) {
@@ -38,6 +39,11 @@ export function readJSON<T>(key: string, fallback: T): T {
   } catch {
     return fallback
   }
+}
+
+export function readArray<T>(key: string): T[] {
+  const value = readJSON<unknown>(key, [])
+  return Array.isArray(value) ? (value as T[]) : []
 }
 
 export function writeJSON<T>(key: string, value: T): void {

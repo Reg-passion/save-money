@@ -8,11 +8,14 @@ import {
 } from '../data/constants'
 import type { EggState, EggTier, IslandState } from '../types'
 import {
+  EGG_SCORE_MAX,
+  addDays,
   dailyScore,
   eggTierForScore,
   rareChanceForTier,
+  startOfLocalDay,
   startOfWeek,
-  sumTransactions,
+  sumByDate,
   toDateKey,
   weekDates,
   weeklyBudgetBonus,
@@ -26,7 +29,7 @@ import {
   type MonthSummary,
 } from './island'
 import { yuanToCents } from './money'
-import { readJSON, writeJSON } from './storage'
+import { loadState, readJSON, saveState, writeJSON } from './storage'
 import { addSpiritToCollection, getOwnedSpiritIds } from './summon'
 
 const EGGS_KEY = 'eggs'
@@ -711,6 +714,78 @@ export function hatchDemoEgg(eggId: string, now = new Date()): HatchResult | nul
   return result
 }
 
+export const WEEKLY_HATCH_EVENT = 'money-island:weekly-hatch'
+const DEMO_WEEKLY_EGG_KEY = 'demo-weekly-egg-v1'
+
+export interface EggDayProgress {
+  date: string
+  spentCents: number
+  score: number
+  settled: boolean
+  future: boolean
+}
+
+export interface EggWeekSummary {
+  weekStart: string
+  weekEnd: string
+  days: EggDayProgress[]
+  spentCents: number
+  rawScore: number
+  bonus: number
+  score: number
+  tier: EggTier
+  startingTier: EggTier
+  rareChance: number
+  settledDays: number
+  nextTier: EggTier | null
+  pointsToNextTier: number
+  hatched: boolean
+  hatchedSpiritId: string | null
+}
+
+export interface WeeklyHatchOutcome {
+  state: IslandState
+  weekStart: string
+  summary: EggWeekSummary
+  fromScore: number
+  fromTier: EggTier
+  score: number
+  tier: EggTier
+  rareChance: number
+  spirit: Spirit
+  isNew: boolean
+  alreadyHatched: boolean
+}
+
+export interface DemoEggRecord {
+  spiritId: string
+  tier: EggTier
+  rareChance: number
+  score: number
+  isNew: boolean
+  at: string
+}
+
+export interface DemoEggState {
+  runs: number
+  last: DemoEggRecord | null
+}
+
+export interface DemoHatchOutcome {
+  demo: DemoEggState
+  spirit: Spirit
+  isNew: boolean
+  score: number
+  tier: EggTier
+  rareChance: number
+}
+
+export function nextEggTierForScore(score: number): { tier: EggTier | null; points: number } {
+  if (score < 30) return { tier: 'silver', points: 30 - score }
+  if (score < 70) return { tier: 'gold', points: 70 - score }
+  return { tier: null, points: 0 }
+}
+
 export function createEggState(cycleStart: string): EggState {
   return {
     cycleStart,
@@ -723,11 +798,62 @@ export function createEggState(cycleStart: string): EggState {
   }
 }
 
+export function getEggWeekSummary(
+  state: IslandState,
+  anchor: Date | string = new Date(),
+  now: Date = new Date(),
+): EggWeekSummary {
+  const monday = startOfWeek(anchor instanceof Date ? anchor : new Date(anchor))
+  const weekStart = toDateKey(monday)
+  const dates = weekDates(monday)
+  const todayKey = toDateKey(now)
+  const days = dates.map((date) => {
+    const spentCents = sumByDate(state.transactions, date)
+    const settledScore = state.egg.dailyScores[date]
+    return {
+      date,
+      spentCents,
+      score: settledScore ?? dailyScore(spentCents, state.budgets.daily),
+      settled: settledScore !== undefined,
+      future: date > todayKey,
+    }
+  })
+  const spentCents = days.reduce((sum, day) => sum + day.spentCents, 0)
+  const rawScore = days.reduce((sum, day) => sum + day.score, 0)
+  const bonus = weeklyBudgetBonus(spentCents, state.budgets.weekly)
+  const score = Math.min(EGG_SCORE_MAX, rawScore + bonus)
+  const tier = eggTierForScore(score)
+  const cycleMatches = state.egg.cycleStart === weekStart
+  const next = nextEggTierForScore(score)
+
+  return {
+    weekStart,
+    weekEnd: dates[6] ?? weekStart,
+    days,
+    spentCents,
+    rawScore,
+    bonus,
+    score,
+    tier,
+    startingTier: eggTierForScore(cycleMatches ? state.egg.score : 0),
+    rareChance: rareChanceForTier(tier),
+    settledDays: days.filter((day) => day.settled).length,
+    nextTier: next.tier,
+    pointsToNextTier: next.points,
+    hatched: cycleMatches && state.egg.hatched,
+    hatchedSpiritId: cycleMatches ? state.egg.hatchedSpiritId : null,
+  }
+}
+
+export function syncEggCycle(state: IslandState, now: Date = new Date()): IslandState {
+  const monday = toDateKey(startOfWeek(now))
+  if (state.egg.cycleStart === monday) return state
+  return { ...state, egg: createEggState(monday) }
+}
+
 export function settleDay(state: IslandState, date: string): IslandState {
-  if (state.egg.dailyScores[date] !== undefined) return state
-  const spentCents = state.transactions
-    .filter((transaction) => transaction.date === date)
-    .reduce((sum, transaction) => sum + transaction.amountCents, 0)
+  if (state.egg.hatched || state.egg.dailyScores[date] !== undefined) return state
+  const spentCents = sumByDate(state.transactions, date)
   const score = dailyScore(spentCents, state.budgets.daily)
   return {
     ...state,
@@ -740,53 +866,167 @@ export function settleDay(state: IslandState, date: string): IslandState {
 }
 
 export function settleDueDays(state: IslandState, now: Date = new Date()): IslandState {
-  const today = toDateKey(now)
-  const dates = new Set(
-    state.transactions
-      .map((transaction) => transaction.date)
-      .filter((date) => date < today && state.egg.dailyScores[date] === undefined),
-  )
-  let next = state
-  for (const date of [...dates].sort()) next = settleDay(next, date)
+  let next = syncEggCycle(state, now)
+  if (next.egg.hatched) return next
+
+  const todayKey = toDateKey(startOfLocalDay(now))
+  const cycleStart = new Date(`${next.egg.cycleStart}T00:00:00`)
+  if (Number.isNaN(cycleStart.getTime())) return next
+
+  for (let index = 0; index < 7; index += 1) {
+    const date = toDateKey(addDays(cycleStart, index))
+    if (date >= todayKey) break
+    next = settleDay(next, date)
+  }
   return next
 }
 
-export function finalizeWeeklyEgg(
+export function syncEggState(now: Date = new Date()): IslandState {
+  const state = loadState()
+  const next = settleDueDays(state, now)
+  if (next !== state) saveState(next)
+  return next
+}
+
+function pickWeeklyEggSpirit(
+  weekStart: string,
+  tier: EggTier,
+  spirits: IslandState['spirits'],
+): Spirit {
+  const rareRoll = (hashString(`${weekStart}:egg-rare`) % 10000) / 10000
+  const wanted: Rarity = rareRoll < rareChanceForTier(tier) ? 'rare' : 'normal'
+  const pool = CATALOG.filter((spirit) => spirit.rarity === wanted)
+  const unowned = pool.filter((spirit) => !spirits[spirit.id])
+  const candidates = unowned.length > 0 ? unowned : pool
+  const fallback = candidates.length > 0 ? candidates : CATALOG
+  return fallback[hashString(`${weekStart}:egg-spirit:${wanted}`) % fallback.length] ?? CATALOG[0]
+}
+
+function emptyDemoEggState(): DemoEggState {
+  return { runs: 0, last: null }
+}
+
+export function loadDemoWeeklyEgg(): DemoEggState {
+  const raw = readJSON<unknown>(DEMO_WEEKLY_EGG_KEY, null)
+  if (!isRecord(raw)) return emptyDemoEggState()
+  const runs = Number(raw.runs)
+  const lastRaw = isRecord(raw.last) ? raw.last : null
+  const spirit =
+    lastRaw && typeof lastRaw.spiritId === 'string' ? SPIRIT_BY_ID[lastRaw.spiritId] : null
+  const tier = lastRaw && isEggTier(lastRaw.tier) ? lastRaw.tier : null
+  const last =
+    lastRaw && spirit && tier
+      ? {
+          spiritId: spirit.id,
+          tier,
+          rareChance:
+            typeof lastRaw.rareChance === 'number' && Number.isFinite(lastRaw.rareChance)
+              ? lastRaw.rareChance
+              : rareChanceForTier(tier),
+          score: typeof lastRaw.score === 'number' && Number.isFinite(lastRaw.score) ? lastRaw.score : 0,
+          isNew: lastRaw.isNew === true,
+          at: typeof lastRaw.at === 'string' ? lastRaw.at : '',
+        }
+      : null
+  return {
+    runs: Number.isSafeInteger(runs) && runs >= 0 ? runs : 0,
+    last,
+  }
+}
+
+function pickDemoSpirit(
+  seed: string,
+  tier: EggTier,
+  spirits: IslandState['spirits'],
+): Spirit {
+  const rareRoll = (hashString(`${seed}:demo-rare`) % 10000) / 10000
+  const wanted: Rarity = rareRoll < rareChanceForTier(tier) ? 'rare' : 'normal'
+  const pool = CATALOG.filter((spirit) => spirit.rarity === wanted)
+  const unowned = pool.filter((spirit) => !spirits[spirit.id])
+  const candidates = unowned.length > 0 ? unowned : pool
+  const fallback = candidates.length > 0 ? candidates : CATALOG
+  return fallback[hashString(`${seed}:demo-spirit`) % fallback.length] ?? CATALOG[0]
+}
+
+export function runDemoWeeklyHatch(
+  state: IslandState,
+  now: Date = new Date(),
+): DemoHatchOutcome {
+  const previous = loadDemoWeeklyEgg()
+  const runs = previous.runs + 1
+  const summary = getEggWeekSummary(state, now, now)
+  const spirit = pickDemoSpirit(`${toDateKey(now)}:${runs}`, summary.tier, state.spirits)
+  const isNew = !state.spirits[spirit.id]
+  const demo: DemoEggState = {
+    runs,
+    last: {
+      spiritId: spirit.id,
+      tier: summary.tier,
+      rareChance: summary.rareChance,
+      score: summary.score,
+      isNew,
+      at: now.toISOString(),
+    },
+  }
+  writeJSON(DEMO_WEEKLY_EGG_KEY, demo)
+  return {
+    demo,
+    spirit,
+    isNew,
+    score: summary.score,
+    tier: summary.tier,
+    rareChance: summary.rareChance,
+  }
+}
+
+export function hatchWeeklyEgg(
   state: IslandState,
   anchor: Date | string = state.egg.cycleStart || new Date(),
   now: Date = new Date(),
-): IslandState {
-  if (state.egg.hatched) return state
+): WeeklyHatchOutcome {
   const monday = startOfWeek(anchor instanceof Date ? anchor : new Date(anchor))
-  const dates = weekDates(monday)
-  const dateSet = new Set(dates)
-  const spentCents = sumTransactions(
-    state.transactions.filter((transaction) => dateSet.has(transaction.date)),
-  )
-  const rawScore = dates.reduce((sum, date) => {
-    if (state.egg.dailyScores[date] !== undefined) return sum + state.egg.dailyScores[date]
-    const spent = state.transactions
-      .filter((transaction) => transaction.date === date)
-      .reduce((total, transaction) => total + transaction.amountCents, 0)
-    return sum + dailyScore(spent, state.budgets.daily)
-  }, 0)
-  const score = Math.min(115, rawScore + weeklyBudgetBonus(spentCents, state.budgets.weekly))
-  const tier = eggTierForScore(score)
-  const rareRoll = (hashString(`${toDateKey(monday)}:v2-rare`) % 10000) / 10000
-  const pool = CATALOG.filter((spirit) =>
-    rareRoll < rareChanceForTier(tier) ? spirit.rarity === 'rare' : spirit.rarity === 'normal',
-  )
-  const candidates = pool.length > 0 ? pool : CATALOG.filter((spirit) => spirit.rarity === 'normal')
-  const spirit = candidates[hashString(`${toDateKey(monday)}:v2-spirit`) % candidates.length]
-  const previous = state.spirits[spirit.id]
+  const weekStart = toDateKey(monday)
+  const summary = getEggWeekSummary(state, monday, now)
+  const fromScore = state.egg.cycleStart === weekStart ? state.egg.score : 0
+  const fromTier = eggTierForScore(fromScore)
 
-  return {
+  if (state.egg.hatched && state.egg.cycleStart === weekStart) {
+    const existing = state.egg.hatchedSpiritId
+      ? SPIRIT_BY_ID[state.egg.hatchedSpiritId]
+      : undefined
+    if (existing) {
+      return {
+        state,
+        weekStart,
+        summary,
+        fromScore,
+        fromTier,
+        score: state.egg.score,
+        tier: state.egg.tier ?? eggTierForScore(state.egg.score),
+        rareChance: rareChanceForTier(state.egg.tier ?? eggTierForScore(state.egg.score)),
+        spirit: existing,
+        isNew: false,
+        alreadyHatched: true,
+      }
+    }
+  }
+
+  const spirit = pickWeeklyEggSpirit(weekStart, summary.tier, state.spirits)
+  const previous = state.spirits[spirit.id]
+  const todayKey = toDateKey(now)
+  const dailyScores = { ...state.egg.dailyScores }
+  for (const day of summary.days) {
+    if (day.date <= todayKey) dailyScores[day.date] = day.score
+  }
+
+  const next: IslandState = {
     ...state,
     egg: {
       ...state.egg,
-      cycleStart: toDateKey(monday),
-      score,
-      tier,
+      cycleStart: weekStart,
+      score: summary.score,
+      dailyScores,
+      tier: summary.tier,
       hatched: true,
       hatchedSpiritId: spirit.id,
     },
@@ -799,6 +1039,37 @@ export function finalizeWeeklyEgg(
       },
     },
   }
+
+  return {
+    state: next,
+    weekStart,
+    summary,
+    fromScore,
+    fromTier,
+    score: summary.score,
+    tier: summary.tier,
+    rareChance: summary.rareChance,
+    spirit,
+    isNew: !previous,
+    alreadyHatched: false,
+  }
+}
+
+export function finalizeWeeklyEgg(
+  state: IslandState,
+  anchor: Date | string = state.egg.cycleStart || new Date(),
+  now: Date = new Date(),
+): IslandState {
+  return hatchWeeklyEgg(state, anchor, now).state
+}
+
+export function notifyWeeklyReportGenerated(weekStart: string): void {
+  if (typeof window === 'undefined') return
+  window.setTimeout(() => {
+    window.dispatchEvent(
+      new CustomEvent(WEEKLY_HATCH_EVENT, { detail: { weekStart } }),
+    )
+  }, 800)
 }
 
 export { dailyScore, eggTierForScore, rareChanceForTier }

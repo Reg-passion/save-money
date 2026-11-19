@@ -7,6 +7,19 @@ export const DEFAULT_BUDGETS: Budgets = {
 
 export const EGG_SCORE_MAX = 115
 
+function validBudgetCents(value: number, fallback: number): number {
+  return Number.isSafeInteger(value) && value > 0 ? value : fallback
+}
+
+export function applyDailyBudget(budgets: Budgets, dailyCents: number): Budgets {
+  const daily = validBudgetCents(Math.round(dailyCents), budgets.daily)
+  return { daily, weekly: daily * 7 }
+}
+
+export function applyWeeklyBudget(budgets: Budgets, weeklyCents: number): Budgets {
+  return { ...budgets, weekly: validBudgetCents(Math.round(weeklyCents), budgets.weekly) }
+}
+
 export function toDateKey(value: Date | string | number): string {
   const date = value instanceof Date ? value : new Date(value)
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(

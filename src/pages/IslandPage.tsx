@@ -1,10 +1,13 @@
 import { Component, lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
 import AddBill from '../components/AddBill'
+import DailyReport from '../components/DailyReport'
+import Egg from '../components/Egg'
 import Island, { IslandScene } from '../components/Island'
 import IslandTopBar from '../components/IslandTopBar'
 import MonsterAnimation from '../components/MonsterAnimation'
+import QuickAdd from '../components/QuickAdd'
 import SavingsCore from '../components/SavingsCore'
-import Settlement from '../components/Settlement'
+import WeeklyReport from '../components/WeeklyReport'
 import WishPool from '../components/WishPool'
 import { CATEGORIES } from '../data/categories'
 import { SPIRIT_BY_ID, type Spirit } from '../data/catalog'
@@ -393,7 +396,7 @@ export default function IslandPage() {
             </div>
 
             <div className="pointer-events-auto">
-              <Settlement summary={summary} settings={settings} />
+              <Egg />
             </div>
 
             <div className="pointer-events-auto">
@@ -406,8 +409,19 @@ export default function IslandPage() {
             </div>
           </div>
         </div>
+
+        <section
+          id="reports"
+          aria-label="日报与周报"
+          className="pointer-events-auto grid scroll-mt-24 gap-3 lg:grid-cols-2 lg:items-start"
+        >
+          <DailyReport />
+          <WeeklyReport />
+        </section>
       </div>
       </div>
+
+      <QuickAdd />
 
       {encounter && (
         <MonsterAnimation

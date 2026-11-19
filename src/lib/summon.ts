@@ -48,7 +48,8 @@ export interface SummonDecision {
   spirit: Spirit | null
   isNew: boolean
   remaining: number
-  reason: 'summoned' | 'daily-limit'
+  reason: 'summoned' | 'evolved' | 'daily-limit'
+  evolvedFrom?: string | null
 }
 
 export interface SpiritEncounter {
@@ -93,6 +94,31 @@ export function getSpiritCollectionSummary(): SpiritCollectionSummary {
     progress: state.progress,
     total: state.total,
   }
+}
+
+export function summarizeSpiritRecords(
+  spirits: Record<string, SpiritRecord>,
+): SpiritCollectionSummary {
+  const owned: Record<string, { count: number }> = {}
+  const evolved: Record<string, true> = {}
+  for (const [id, record] of Object.entries(spirits)) {
+    if (!SPIRIT_BY_ID[id] || !record || typeof record.count !== 'number') continue
+    if (record.count <= 0) continue
+    owned[id] = { count: Math.floor(record.count) }
+    if (record.evolved) evolved[id] = true
+  }
+  return {
+    owned,
+    evolved,
+    progress: Object.keys(owned).length,
+    total: CATALOG_TOTAL,
+  }
+}
+
+export function getStateSpiritCollectionSummary(
+  state: IslandState,
+): SpiritCollectionSummary {
+  return summarizeSpiritRecords(state.spirits)
 }
 
 export function getOwnedSpiritIds(): Set<string> {
@@ -197,11 +223,22 @@ function chooseFromPool(
   return candidates[index]
 }
 
+function evolutionFor(
+  spirit: Spirit,
+  counts: Record<string, number>,
+  ownedIds: Set<string>,
+): Spirit | null {
+  if (!spirit.evolvesTo || (counts[spirit.id] ?? 0) < 2) return null
+  if (ownedIds.has(spirit.evolvesTo)) return null
+  return SPIRIT_BY_ID[spirit.evolvesTo] ?? null
+}
+
 export function decideSummon(
   bill: SummonSource,
   priorBills: SummonPrior[] = [],
   ownedIds: Set<string> = getOwnedSpiritIds(),
   limit = DAILY_SUMMON_LIMIT,
+  counts: Record<string, number> = {},
 ): SummonDecision {
   const usedToday = countSummonsForDate(priorBills, toDateKey(bill.time))
   if (usedToday >= limit) {
@@ -242,12 +279,14 @@ export function decideSummon(
     }
   }
 
+  const evolved = evolutionFor(spirit, counts, ownedIds)
   return {
     outcome: 'spirit',
-    spirit,
-    isNew: !ownedIds.has(spirit.id),
+    spirit: evolved ?? spirit,
+    isNew: evolved ? true : !ownedIds.has(spirit.id),
     remaining: Math.max(0, limit - usedToday - 1),
-    reason: 'summoned',
+    reason: evolved ? 'evolved' : 'summoned',
+    evolvedFrom: evolved ? spirit.id : null,
   }
 }
 
@@ -257,9 +296,14 @@ export function applySummonDecision(
   now = new Date(),
 ): Record<string, SpiritRecord> {
   if (!decision.spirit) return spirits
-  const previous = spirits[decision.spirit.id]
+  const next = { ...spirits }
+  if (decision.evolvedFrom) {
+    const base = next[decision.evolvedFrom]
+    if (base) next[decision.evolvedFrom] = { ...base, evolved: true }
+  }
+  const previous = next[decision.spirit.id]
   return {
-    ...spirits,
+    ...next,
     [decision.spirit.id]: {
       count: (previous?.count ?? 0) + 1,
       evolved: previous?.evolved ?? false,
@@ -293,6 +337,10 @@ export function pickSummon(
     },
     prior,
     new Set(Object.keys(state.spirits)),
+    DAILY_SUMMON_LIMIT,
+    Object.fromEntries(
+      Object.entries(state.spirits).map(([id, record]) => [id, record.count]),
+    ),
   )
   return {
     spiritId: decision.spirit?.id ?? null,

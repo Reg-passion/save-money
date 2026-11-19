@@ -9,7 +9,11 @@ import {
   type Rarity,
   type Spirit,
 } from '../data/catalog'
-import { getSpiritCollectionSummary, type SpiritCollectionSummary } from '../lib/summon'
+import { loadState } from '../lib/storage'
+import {
+  getStateSpiritCollectionSummary,
+  type SpiritCollectionSummary,
+} from '../lib/summon'
 
 const INK = '#2f4147'
 const CREAM = '#fffaf0'
@@ -366,15 +370,25 @@ export function SpiritSprite({ spirit, silhouette = false, className }: SpiritSp
 
 const CATEGORY_NAMES = new Map(CATEGORIES.map((category) => [category.id, category.name]))
 
-function evolutionCopy(spirit: Spirit): string {
-  if (!spirit.evolvesTo) return '已是最终形态'
+function evolutionCopy(
+  spirit: Spirit,
+  count: number,
+  evolved: boolean,
+): string {
+  if (!spirit.evolvesTo) return count > 0 ? '已是最终形态' : '集齐后会显现最终形态'
   const target = SPIRIT_BY_ID[spirit.evolvesTo]
-  return `形态线索：${target?.name ?? '???'}`
+  if (count <= 0) return `集齐 3 次后进化成 ${target?.name ?? '???'}`
+  if (evolved) return `已进化成 ${target?.name ?? '???'}`
+  return `再遇到 ${Math.max(0, 3 - count)} 次，进化成 ${target?.name ?? '???'}`
+}
+
+function loadCollectionSummary(): SpiritCollectionSummary {
+  return getStateSpiritCollectionSummary(loadState())
 }
 
 export default function Codex() {
   const [summary, setSummary] = useState<SpiritCollectionSummary>(() =>
-    getSpiritCollectionSummary(),
+    loadCollectionSummary(),
   )
   const [activeId, setActiveId] = useState<string | null>(null)
   const dialogRef = useRef<HTMLDialogElement>(null)
@@ -386,6 +400,9 @@ export default function Codex() {
 
   useEffect(() => {
     window.scrollTo(0, 0)
+    const refresh = () => setSummary(loadCollectionSummary())
+    window.addEventListener('focus', refresh)
+    return () => window.removeEventListener('focus', refresh)
   }, [])
 
   useEffect(() => {
@@ -423,7 +440,7 @@ export default function Codex() {
   }, [active])
 
   function openDetail(id: string) {
-    setSummary(getSpiritCollectionSummary())
+    setSummary(loadCollectionSummary())
     setActiveId(id)
   }
 
@@ -462,15 +479,15 @@ export default function Codex() {
         <div className="mt-3 rounded-2xl border border-ink/10 bg-white/65 px-3 py-2">
           <div className="flex items-baseline justify-between gap-2">
             <p className="text-[10px] text-ink/45">精灵来源</p>
-            <p className="text-sm font-semibold text-ink">月度结算的蛋</p>
+            <p className="text-sm font-semibold text-ink">记账召唤 + 每周蛋</p>
           </div>
           <p className="mt-0.5 text-[10px] leading-relaxed text-ink/40">
-            每笔记账最多召唤 5 只精灵；重复遇见会累计次数，图鉴按不同精灵计算进度。
+            每天记账最多召唤 5 只精灵；每周蛋再孵 1 只。同一只遇到 3 次会进化，图鉴按不同精灵计算进度。
           </p>
         </div>
         <p className="mt-2 text-[11px] text-ink/40">
           普通 {RARITY_COUNTS.normal} · 稀有 {RARITY_COUNTS.rare} · 隐藏 {RARITY_COUNTS.hidden}
-          ；每月结算最多得 1 枚蛋，记满 3 个自然日孵化。
+          ；每天结算一次蛋分，7 天按总分孵蛋。
         </p>
       </header>
 
@@ -598,7 +615,11 @@ export default function Codex() {
                 <div className="min-w-0">
                   <dt className="font-semibold text-ink/45">进化</dt>
                   <dd className="mt-0.5 text-ink/75">
-                    {evolutionCopy(active)}
+                    {evolutionCopy(
+                      active,
+                      activeEntry?.count ?? 0,
+                      summary.evolved[active.id] === true,
+                    )}
                   </dd>
                 </div>
               </div>
