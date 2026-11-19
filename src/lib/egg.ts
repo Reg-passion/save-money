@@ -28,6 +28,7 @@ import {
   type IslandSettings,
   type MonthSummary,
 } from './island'
+import { getEggBonusForWeek } from './tower'
 import { yuanToCents } from './money'
 import { loadState, readJSON, saveState, writeJSON } from './storage'
 import { addSpiritToCollection, getOwnedSpiritIds } from './summon'
@@ -732,6 +733,7 @@ export interface EggWeekSummary {
   spentCents: number
   rawScore: number
   bonus: number
+  towerBonus: number
   score: number
   tier: EggTier
   startingTier: EggTier
@@ -821,7 +823,8 @@ export function getEggWeekSummary(
   const spentCents = days.reduce((sum, day) => sum + day.spentCents, 0)
   const rawScore = days.reduce((sum, day) => sum + day.score, 0)
   const bonus = weeklyBudgetBonus(spentCents, state.budgets.weekly)
-  const score = Math.min(EGG_SCORE_MAX, rawScore + bonus)
+  const towerBonus = getEggBonusForWeek(weekStart)
+  const score = Math.min(EGG_SCORE_MAX, rawScore + bonus + towerBonus)
   const tier = eggTierForScore(score)
   const cycleMatches = state.egg.cycleStart === weekStart
   const next = nextEggTierForScore(score)
@@ -833,6 +836,7 @@ export function getEggWeekSummary(
     spentCents,
     rawScore,
     bonus,
+    towerBonus,
     score,
     tier,
     startingTier: eggTierForScore(cycleMatches ? state.egg.score : 0),

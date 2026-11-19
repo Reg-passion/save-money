@@ -8,7 +8,11 @@ export interface Monster {
   maxHp: number
   speed: number
   amountCents: number
+  merged?: boolean
 }
+
+export const MONSTER_HP_PER_YUAN = 15
+export const MONSTER_WAVE_LABELS = ['周一至周三', '周四至周五', '周六至周日'] as const
 
 const CATEGORY_MONSTER_NAME: Record<CategoryId, string> = {
   takeout: '外卖怪',
@@ -21,7 +25,7 @@ const CATEGORY_MONSTER_NAME: Record<CategoryId, string> = {
   fun: '娱乐怪',
 }
 
-const CATEGORY_MONSTER_SPEED: Record<CategoryId, number> = {
+export const MONSTER_SPEED: Record<CategoryId, number> = {
   takeout: 0.55,
   'milk-tea': 0.9,
   'night-snack': 0.82,
@@ -32,30 +36,40 @@ const CATEGORY_MONSTER_SPEED: Record<CategoryId, number> = {
   fun: 0.72,
 }
 
-export const MONSTER_HP_PER_YUAN = 15
-
 export function monsterHpForCents(amountCents: number): number {
-  return Math.round(amountCents / (MONSTER_HP_PER_YUAN * 100))
+  return Math.max(1, Math.round(amountCents / (MONSTER_HP_PER_YUAN * 100)))
 }
 
 function toMonster(transaction: Transaction): Monster {
-  const hp = Math.max(1, monsterHpForCents(transaction.amountCents))
+  const hp = monsterHpForCents(transaction.amountCents)
   return {
     id: transaction.id,
     name: CATEGORY_MONSTER_NAME[transaction.category],
     category: transaction.category,
     hp,
     maxHp: hp,
-    speed: CATEGORY_MONSTER_SPEED[transaction.category],
+    speed: MONSTER_SPEED[transaction.category],
     amountCents: transaction.amountCents,
   }
 }
 
+function dateOf(transaction: Transaction): Date {
+  const fromDate = new Date(`${transaction.date}T00:00:00`)
+  return Number.isNaN(fromDate.getTime()) ? new Date(transaction.time) : fromDate
+}
+
+function waveIndexFor(transaction: Transaction): 0 | 1 | 2 {
+  const weekday = (dateOf(transaction).getDay() + 6) % 7
+  if (weekday <= 2) return 0
+  if (weekday <= 4) return 1
+  return 2
+}
+
 function mergeWave(monsters: Monster[]): Monster[] {
   if (monsters.length <= 10) return monsters
-  const sorted = [...monsters].sort((a, b) => b.hp - a.hp)
-  const kept = sorted.slice(0, 9)
-  const merged = sorted.slice(9)
+
+  const kept = monsters.slice(0, 9)
+  const merged = monsters.slice(9)
   const amountCents = merged.reduce((sum, monster) => sum + monster.amountCents, 0)
   const hp = merged.reduce((sum, monster) => sum + monster.hp, 0)
   return [
@@ -63,28 +77,23 @@ function mergeWave(monsters: Monster[]): Monster[] {
     {
       id: merged.map((monster) => monster.id).join('+'),
       name: '本周大怪',
-      category: merged[0].category,
+      category: merged[0]?.category ?? 'daily',
       hp,
       maxHp: hp,
       speed: Math.min(...merged.map((monster) => monster.speed)),
       amountCents,
+      merged: true,
     },
   ]
 }
 
 export function buildMonsters(transactions: Transaction[]): Monster[][] {
-  if (transactions.length === 0) return [[], [], []]
-
   const waves: Monster[][] = [[], [], []]
-  for (const transaction of transactions) {
-    const weekday = (new Date(transaction.time).getDay() + 6) % 7
-    const waveIndex = weekday <= 2 ? 0 : weekday <= 4 ? 1 : 2
-    waves[waveIndex].push(toMonster(transaction))
-  }
-
-  return waves.map((wave) =>
-    mergeWave(
-      wave.sort((a, b) => a.id.localeCompare(b.id)),
-    ),
+  const ordered = [...transactions].sort(
+    (a, b) => new Date(a.time).getTime() - new Date(b.time).getTime(),
   )
+  for (const transaction of ordered) {
+    waves[waveIndexFor(transaction)].push(toMonster(transaction))
+  }
+  return waves.map(mergeWave)
 }

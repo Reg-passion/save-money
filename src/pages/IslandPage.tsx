@@ -7,6 +7,7 @@ import IslandTopBar from '../components/IslandTopBar'
 import MonsterAnimation from '../components/MonsterAnimation'
 import QuickAdd from '../components/QuickAdd'
 import SavingsCore from '../components/SavingsCore'
+import TowerGame from '../components/TowerGame'
 import WeeklyReport from '../components/WeeklyReport'
 import WishPool from '../components/WishPool'
 import { CATEGORIES } from '../data/categories'
@@ -397,6 +398,10 @@ export default function IslandPage() {
 
             <div className="pointer-events-auto">
               <Egg />
+            </div>
+
+            <div className="pointer-events-auto">
+              <TowerGame />
             </div>
 
             <div className="pointer-events-auto">
