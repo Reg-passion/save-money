@@ -210,7 +210,7 @@ export default function Settlement({ summary, settings }: SettlementProps) {
 
   return (
     <>
-      <section className="rounded-3xl border border-ink/10 bg-white/65 p-4" aria-labelledby="settlement-title">
+      <section className="glass-panel p-4" aria-labelledby="settlement-title">
         <header className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[10px] font-semibold tracking-[0.3em] text-ink/35">MONTHLY EGG</p>

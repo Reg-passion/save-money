@@ -177,7 +177,7 @@ export default function Egg({ eggs, variant = 'formal', onDemoHatch }: EggProps)
 
   return (
     <section
-      className="mt-4 rounded-3xl border border-ink/10 bg-white/60 p-4"
+      className="glass-panel mt-4 p-4"
       aria-labelledby={titleId}
       data-egg-variant={variant}
     >

@@ -42,6 +42,115 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+@layer components {
+  .glass-panel {
+    border: 1px solid rgb(255 255 255 / 0.58);
+    border-radius: 1.75rem;
+    background:
+      linear-gradient(145deg, rgb(255 253 247 / 0.83), rgb(247 245 236 / 0.63));
+    box-shadow:
+      0 26px 60px -34px rgb(16 49 59 / 0.58),
+      0 4px 14px -10px rgb(16 49 59 / 0.35),
+      inset 0 1px 0 rgb(255 255 255 / 0.72);
+    backdrop-filter: blur(20px) saturate(1.22);
+    -webkit-backdrop-filter: blur(20px) saturate(1.22);
+  }
+
+  .glass-icon-button {
+    display: inline-flex;
+    height: 2.5rem;
+    width: 2.5rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgb(255 255 255 / 0.58);
+    border-radius: 9999px;
+    background-color: rgb(255 255 255 / 0.38);
+    color: rgb(47 65 71 / 0.58);
+    transition:
+      color 160ms ease,
+      background-color 160ms ease,
+      transform 160ms ease;
+  }
+
+  .glass-icon-button:hover {
+    background-color: rgb(255 255 255 / 0.72);
+    color: rgb(47 65 71 / 0.82);
+  }
+
+  .glass-icon-button:active {
+    transform: scale(0.96);
+  }
+
+  .glass-icon-button:focus-visible,
+  .glass-action-button:focus-visible {
+    outline: 2px solid var(--color-leaf);
+    outline-offset: 2px;
+  }
+
+  .glass-action-button {
+    min-height: 2.75rem;
+    border: 1px solid rgb(255 255 255 / 0.62);
+    border-radius: 0.9rem;
+    background-color: rgb(255 255 255 / 0.52);
+    padding: 0 0.9rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: rgb(47 65 71 / 0.72);
+    transition:
+      background-color 160ms ease,
+      color 160ms ease;
+  }
+
+  .glass-action-button:hover {
+    background-color: rgb(255 255 255 / 0.82);
+    color: var(--color-ink);
+  }
+
+  .day-night-slider {
+    height: 0.3rem;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    border-radius: 9999px;
+    background: linear-gradient(90deg, #234958 0%, #6f9e9e 48%, #f2cf85 100%);
+    outline: none;
+  }
+
+  .day-night-slider::-webkit-slider-thumb {
+    height: 0.85rem;
+    width: 0.85rem;
+    cursor: grab;
+    appearance: none;
+    -webkit-appearance: none;
+    border: 2px solid #fffdf7;
+    border-radius: 9999px;
+    background: #f7f2df;
+    box-shadow: 0 2px 7px rgb(12 36 44 / 0.35);
+  }
+
+  .day-night-slider::-moz-range-thumb {
+    height: 0.85rem;
+    width: 0.85rem;
+    cursor: grab;
+    border: 2px solid #fffdf7;
+    border-radius: 9999px;
+    background: #f7f2df;
+    box-shadow: 0 2px 7px rgb(12 36 44 / 0.35);
+  }
+
+  .day-night-slider:focus-visible {
+    outline: 2px solid var(--color-leaf);
+    outline-offset: 3px;
+  }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-panel {
+    background: rgb(255 252 244 / 0.94);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-float-soft {
     animation: none;

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useId, useState, type FormEvent } from 'react'
 import {
   WEATHER_LABEL,
   type IslandSettings,
@@ -145,7 +145,7 @@ function Tree({
   )
 }
 
-function IslandScene({ hp, weather }: { hp: number; weather: Weather }) {
+export function IslandScene({ hp, weather }: { hp: number; weather: Weather }) {
   const palette = PALETTES[weather]
   const treeCount = hp > 65 ? 3 : hp > 35 ? 2 : hp > 10 ? 1 : 0
   const lit = hp > 50
@@ -320,6 +320,7 @@ function IslandScene({ hp, weather }: { hp: number; weather: Weather }) {
 
 export default function Island({ settings, summary, weather, onSaveSettings }: IslandProps) {
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null)
+  const titleId = useId()
 
   function handleSettingsSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -342,14 +343,15 @@ export default function Island({ settings, summary, weather, onSaveSettings }: I
   }
 
   return (
-    <section>
-      <header className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[10px] font-semibold tracking-[0.35em] text-ink/40">MONEY ISLAND</p>
-          <h1 className="mt-1 truncate text-2xl font-bold text-ink">{settings.islandName}</h1>
-          <p className="mt-1 text-[11px] leading-relaxed text-ink/45">
-            {summary.monthLabel} · 日均预算 {formatCents(summary.dailyBudgetCents)} 元 · 存钱目标{' '}
-            {formatCents(settings.savingsGoalCents)} 元
+    <section className="glass-panel pointer-events-auto p-4" aria-labelledby={titleId}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-semibold tracking-[0.3em] text-ink/35">ISLAND STATUS</p>
+          <h2 id={titleId} className="mt-1 text-sm font-bold text-ink">
+            岛况
+          </h2>
+          <p className="mt-1 text-[10px] leading-relaxed text-ink/45">
+            本月预算里没花掉的部分会变成小岛建筑；超支会进入修补模式。
           </p>
         </div>
         <span
@@ -357,47 +359,42 @@ export default function Island({ settings, summary, weather, onSaveSettings }: I
         >
           {WEATHER_LABEL[weather]}
         </span>
-      </header>
-
-      <div className="mx-auto mt-3 w-full max-w-[300px]">
-        <IslandScene hp={summary.hp} weather={weather} />
       </div>
 
-      <div className="mt-4 rounded-3xl border border-ink/10 bg-white/70 p-4">
-        <div className="flex items-baseline gap-1.5">
-          <span className="text-xs text-ink/50">岛血量</span>
-          <span className="text-2xl font-bold leading-none text-ink">{summary.hp}</span>
-          <span className="text-xs font-medium text-ink/40">/ 100</span>
-        </div>
+      <div className="mt-3 flex items-baseline gap-1.5">
+        <span className="text-xs text-ink/50">岛血量</span>
+        <span className="text-2xl font-bold leading-none text-ink">{summary.hp}</span>
+        <span className="text-xs font-medium text-ink/40">/ 100</span>
+      </div>
+      <div
+        className="mt-2 h-3 overflow-hidden rounded-full bg-white/50"
+        role="progressbar"
+        aria-label="岛血量"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={summary.hp}
+      >
         <div
-          className="mt-3 h-3 overflow-hidden rounded-full bg-ink/10"
-          role="progressbar"
-          aria-label="岛血量"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={summary.hp}
-        >
-          <div
-            className="h-full rounded-full transition-[width] duration-500 ease-out"
-            style={{ width: `${summary.hp}%`, backgroundColor: HP_BAR_COLOR[weather] }}
-          />
-        </div>
-        <div className="mt-3 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs text-ink/55">
-          <span>
-            本月已花 <b className="text-sm font-semibold text-ink">{formatCents(summary.spentCents)}</b> /{' '}
-            {formatCents(settings.monthlyBudgetCents)} 元
-          </span>
-          <span className={summary.isOverspent ? 'font-medium text-[#B14E3D]' : ''}>
-            {summary.isOverspent
-              ? `超支 ${formatCents(Math.abs(summary.remainingCents))} 元`
-              : `还剩 ${formatCents(summary.remainingCents)} 元`}
-          </span>
-        </div>
+          className="h-full rounded-full transition-[width] duration-500 ease-out"
+          style={{ width: `${summary.hp}%`, backgroundColor: HP_BAR_COLOR[weather] }}
+        />
+      </div>
+      <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-[11px] text-ink/55">
+        <span>
+          本月已花{' '}
+          <b className="font-semibold text-ink">{formatCents(summary.spentCents)}</b> /{' '}
+          {formatCents(settings.monthlyBudgetCents)} 元
+        </span>
+        <span className={summary.isOverspent ? 'font-medium text-[#B14E3D]' : ''}>
+          {summary.isOverspent
+            ? `超支 ${formatCents(Math.abs(summary.remainingCents))} 元`
+            : `还剩 ${formatCents(summary.remainingCents)} 元`}
+        </span>
       </div>
 
       {weather === 'repair' && (
         <div
-          className="mt-3 rounded-2xl border border-[#E4BE93] bg-[#FBF0E0] px-4 py-3 text-xs leading-relaxed text-[#8A5A2B]"
+          className="mt-3 rounded-2xl border border-[#E4BE93]/80 bg-[#FBF0E0]/85 px-4 py-3 text-xs leading-relaxed text-[#8A5A2B]"
           role="status"
         >
           {summary.isOverspent
@@ -406,7 +403,10 @@ export default function Island({ settings, summary, weather, onSaveSettings }: I
         </div>
       )}
 
-      <details className="mt-3 rounded-2xl border border-ink/10 bg-white/55">
+      <details
+        id="island-settings"
+        className="mt-3 scroll-mt-44 rounded-2xl border border-white/55 bg-white/35"
+      >
         <summary className="flex min-h-12 cursor-pointer select-none items-center px-4 text-xs font-medium text-ink/55">
           开岛设定 · 预算 / 目标 / 岛名
         </summary>
@@ -422,7 +422,7 @@ export default function Island({ settings, summary, weather, onSaveSettings }: I
               defaultValue={settings.islandName}
               required
               maxLength={12}
-              className="h-12 rounded-xl border border-ink/10 bg-white px-3 text-base text-ink outline-none focus:border-leaf"
+              className="h-12 rounded-xl border border-white/70 bg-white/80 px-3 text-base text-ink outline-none focus:border-leaf"
             />
           </label>
           <div className="grid grid-cols-2 gap-3">
@@ -435,7 +435,7 @@ export default function Island({ settings, summary, weather, onSaveSettings }: I
                 step="0.01"
                 defaultValue={centsToInputValue(settings.monthlyBudgetCents)}
                 required
-                className="h-12 w-full rounded-xl border border-ink/10 bg-white px-3 text-base text-ink outline-none focus:border-leaf"
+                className="h-12 w-full rounded-xl border border-white/70 bg-white/80 px-3 text-base text-ink outline-none focus:border-leaf"
               />
             </label>
             <label className="grid gap-1">
@@ -447,7 +447,7 @@ export default function Island({ settings, summary, weather, onSaveSettings }: I
                 step="0.01"
                 defaultValue={centsToInputValue(settings.savingsGoalCents)}
                 required
-                className="h-12 w-full rounded-xl border border-ink/10 bg-white px-3 text-base text-ink outline-none focus:border-leaf"
+                className="h-12 w-full rounded-xl border border-white/70 bg-white/80 px-3 text-base text-ink outline-none focus:border-leaf"
               />
             </label>
           </div>

@@ -73,7 +73,7 @@ export default function AddBill({ onAdd }: AddBillProps) {
   }
 
   return (
-    <section className="rounded-3xl border border-ink/10 bg-white/75 p-4">
+    <section className="glass-panel p-4">
       <div className="flex items-baseline justify-between gap-3">
         <h2 className="text-sm font-semibold text-ink">记一笔</h2>
         <span className="text-[11px] text-ink/40">月累计扣血 · 1 点 = 15 元</span>
@@ -107,7 +107,7 @@ export default function AddBill({ onAdd }: AddBillProps) {
         </div>
         <label className="block">
           <span className="text-[11px] font-medium text-ink/45">金额（元）</span>
-          <div className="mt-1.5 flex items-center gap-2 rounded-2xl border border-ink/10 bg-white px-4 py-2.5 focus-within:border-leaf">
+          <div className="mt-1.5 flex items-center gap-2 rounded-2xl border border-white/70 bg-white/80 px-4 py-2.5 focus-within:border-leaf">
             <span className="text-sm font-semibold text-ink/40">¥</span>
             <input
               ref={amountRef}
@@ -156,7 +156,7 @@ export default function AddBill({ onAdd }: AddBillProps) {
             value={note}
             onChange={(event) => setNote(event.target.value)}
             placeholder="比如：三分糖、和室友拼单"
-            className="mt-1.5 h-12 w-full rounded-xl border border-ink/10 bg-white px-3 text-base text-ink outline-none focus:border-leaf"
+            className="mt-1.5 h-12 w-full rounded-xl border border-white/70 bg-white/80 px-3 text-base text-ink outline-none focus:border-leaf"
           />
         </label>
 
@@ -167,7 +167,7 @@ export default function AddBill({ onAdd }: AddBillProps) {
             value={time}
             onChange={(event) => setTime(event.target.value)}
             required
-            className="mt-1.5 h-12 w-full rounded-xl border border-ink/10 bg-white px-3 text-base text-ink outline-none focus:border-leaf"
+            className="mt-1.5 h-12 w-full rounded-xl border border-white/70 bg-white/80 px-3 text-base text-ink outline-none focus:border-leaf"
           />
         </label>
 

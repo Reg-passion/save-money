@@ -43,7 +43,7 @@ export default function WishPool({ wishes, onConfirm, onCancel }: WishPoolProps)
   }
 
   return (
-    <section className="rounded-3xl border border-[#E9D08A] bg-[#FFFCF0] p-4" aria-labelledby="wish-title">
+    <section className="glass-panel p-4" aria-labelledby="wish-title">
       <header className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[10px] font-semibold tracking-[0.3em] text-[#9A7624]">WISH POOL</p>
@@ -69,7 +69,7 @@ export default function WishPool({ wishes, onConfirm, onCancel }: WishPoolProps)
         {pending.map((wish) => {
           const ready = isWishReady(wish, now)
           return (
-            <li key={wish.id} className="rounded-2xl border border-[#E9D08A]/70 bg-white/65 p-3">
+            <li key={wish.id} className="rounded-2xl border border-[#E9D08A]/60 bg-white/55 p-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-ink">

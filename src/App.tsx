@@ -9,9 +9,15 @@ export default function App() {
   const [tab, setTab] = useState<TabId>('island')
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col">
+    <div className="relative min-h-dvh w-full">
       <StorageNotice />
-      <main className="flex flex-1 flex-col px-5 pb-32 pt-8">
+      <main
+        className={
+          tab === 'island'
+            ? 'relative z-10 flex min-h-dvh w-full flex-1 flex-col'
+            : 'relative z-10 mx-auto flex min-h-dvh w-full max-w-md flex-1 flex-col px-5 pb-32 pt-8'
+        }
+      >
         {tab === 'island' && <IslandPage />}
         {tab === 'codex' && <CodexPage />}
         {tab === 'dorm' && <DormPage />}

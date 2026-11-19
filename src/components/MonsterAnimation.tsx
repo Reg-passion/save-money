@@ -99,6 +99,7 @@ export default function MonsterAnimation({
   onDone,
 }: MonsterAnimationProps) {
   const [drained, setDrained] = useState(false)
+  const cardRef = useRef<HTMLDivElement>(null)
   const onDoneRef = useRef(onDone)
 
   useEffect(() => {
@@ -112,6 +113,25 @@ export default function MonsterAnimation({
       window.clearTimeout(drainTimer)
       window.clearTimeout(closeTimer)
     }
+  }, [])
+
+  useEffect(() => {
+    // 记账后用户通常停在表单底部；若动画卡片压到表单，就上滚一点点让出空间。
+    const form = document.querySelector('form[aria-label="记一笔"]')
+    const card = cardRef.current
+    if (!form || !card) return
+
+    const cardRect = card.getBoundingClientRect()
+    const formRect = form.getBoundingClientRect()
+    const overlaps =
+      formRect.top < cardRect.bottom + 12 && formRect.bottom > cardRect.top - 12
+    if (!overlaps) return
+
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    window.scrollBy({
+      top: formRect.top - cardRect.bottom - 16,
+      behavior: reduce ? 'auto' : 'smooth',
+    })
   }, [])
 
   const guardian = getGuardian(monster.id)
@@ -133,10 +153,13 @@ export default function MonsterAnimation({
       data-monster-id={monster.id}
       data-hp-before={hpBefore}
       data-hp-after={hpAfter}
-      className="pointer-events-none fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] z-40 flex justify-center px-4"
+      className="pointer-events-none fixed inset-x-0 top-[calc(10rem+env(safe-area-inset-top,0px))] z-40 flex justify-center px-4 lg:top-[calc(9.5rem+env(safe-area-inset-top,0px))]"
     >
       <style>{ANIMATION_STYLES}</style>
-      <div className="ma-card relative w-full max-w-md overflow-hidden rounded-3xl border border-ink/10 bg-cream/95 shadow-xl backdrop-blur">
+      <div
+        ref={cardRef}
+        className="ma-card relative w-full max-w-md overflow-hidden rounded-3xl border border-white/60 bg-[#FFFCF4]/92 shadow-[0_24px_60px_-24px_rgba(16,49,59,0.6)] backdrop-blur-xl"
+      >
         <button
           type="button"
           onClick={onDone}

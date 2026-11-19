@@ -6,9 +6,9 @@ interface TabBarProps {
 }
 
 const BASE =
-  'flex h-14 flex-col items-center justify-center gap-1 rounded-2xl text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-leaf'
-const ACTIVE = 'bg-white text-ink shadow-sm'
-const IDLE = 'text-ink/45 hover:text-ink/70'
+  'flex h-14 flex-col items-center justify-center gap-1 rounded-[18px] text-[11px] font-medium transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-leaf'
+const ACTIVE = 'bg-white/85 text-ink shadow-[0_6px_18px_-10px_rgba(21,52,60,0.5)]'
+const IDLE = 'text-ink/45 hover:bg-white/35 hover:text-ink/70'
 
 function IslandIcon() {
   return (
@@ -71,9 +71,9 @@ export default function TabBar({ active, onChange }: TabBarProps) {
   return (
     <nav
       aria-label="主导航"
-      className="fixed inset-x-0 bottom-0 z-20 border-t border-ink/10 bg-cream/95 backdrop-blur"
+      className="pointer-events-auto fixed inset-x-0 bottom-0 z-30 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-2"
     >
-      <div className="mx-auto grid w-full max-w-md grid-cols-3 gap-1.5 px-4 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-2">
+      <div className="mx-auto grid w-full max-w-md grid-cols-3 gap-1.5 rounded-[24px] border border-white/60 bg-[#FFFCF3]/78 p-1.5 shadow-[0_20px_50px_-24px_rgba(16,49,59,0.65)] backdrop-blur-xl">
         <button
           type="button"
           aria-current={active === 'island' ? 'page' : undefined}
