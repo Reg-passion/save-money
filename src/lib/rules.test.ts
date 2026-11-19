@@ -145,8 +145,8 @@ describe('金额与岛血', () => {
   })
 })
 
-describe('消费怪物与精灵收藏分离', () => {
-  it('账单生成怪物，但不写入精灵图鉴', () => {
+describe('记账召唤与每日上限', () => {
+  it('账单按分类召唤精灵，第一笔立刻写入图鉴', () => {
     const bill = createBill({
       amountCents: 1800,
       category: 'milk-tea',
@@ -155,8 +155,24 @@ describe('消费怪物与精灵收藏分离', () => {
     })
     expect(SPIRIT_BY_ID[bill.monsterId]).toBeTruthy()
     expect(bill.source).toBe('manual')
-    expect(getSpiritCollectionSummary().progress).toBe(0)
+    expect(bill.summonOutcome).toBe('spirit')
+    expect(bill.spiritIsNew).toBe(true)
+    expect(bill.summonedSpiritId).toBe(bill.monsterId)
+    expect(getSpiritCollectionSummary().progress).toBe(1)
     expect(loadBills()).toHaveLength(1)
+  })
+
+  it('第一次记外卖必出新精灵', () => {
+    const bill = createBill({
+      amountCents: 2300,
+      category: 'takeout',
+      note: '',
+      time: new Date().toISOString(),
+    })
+    const spirit = bill.summonedSpiritId ? SPIRIT_BY_ID[bill.summonedSpiritId] : null
+    expect(spirit?.category).toBe('takeout')
+    expect(bill.spiritIsNew).toBe(true)
+    expect(getSpiritCollectionSummary().progress).toBe(1)
   })
 
   it('同分类第一笔是主怪，大额账单直接引 Boss，选择结果可复现', () => {
@@ -182,9 +198,9 @@ describe('消费怪物与精灵收藏分离', () => {
     expect(pickMonsterForBill(large, []).id).toBe(boss.id)
   })
 
-  it('连续记账不受每日召唤上限影响，账单全部保留', () => {
+  it('一天记 6 笔，第 6 笔只加岛屿能量，不出新精灵', () => {
     const time = new Date().toISOString()
-    for (let index = 0; index < 8; index += 1) {
+    for (let index = 0; index < 6; index += 1) {
       createBill({
         amountCents: 1800,
         category: 'milk-tea',
@@ -193,9 +209,13 @@ describe('消费怪物与精灵收藏分离', () => {
       })
     }
     const bills = loadBills()
-    expect(bills).toHaveLength(8)
-    expect(summarizeMonth(bills, SETTINGS).spentCents).toBe(14400)
-    expect(getSpiritCollectionSummary().progress).toBe(0)
+    expect(bills).toHaveLength(6)
+    expect(summarizeMonth(bills, SETTINGS).spentCents).toBe(10800)
+    expect(bills.filter((bill) => bill.summonOutcome === 'spirit')).toHaveLength(5)
+    expect(bills.filter((bill) => bill.summonOutcome === 'energy')).toHaveLength(1)
+    const progress = getSpiritCollectionSummary().progress
+    expect(progress).toBeGreaterThan(0)
+    expect(progress).toBeLessThanOrEqual(5)
   })
 })
 
@@ -218,7 +238,9 @@ describe('许愿池', () => {
     expect(confirmed.bill.amountCents).toBe(12800)
     expect(confirmed.bill.source).toBe('wish')
     expect(confirmed.bill.sourceWishId).toBe(wishId)
-    expect(SPIRIT_BY_ID[confirmed.bill.monsterId].stage).toBe(3)
+    expect(confirmed.bill.summonedSpiritId).toBe(confirmed.bill.monsterId)
+    expect(SPIRIT_BY_ID[confirmed.bill.monsterId]).toBeTruthy()
+    expect(getSpiritCollectionSummary().progress).toBe(1)
     expect(loadWishes()[0].status).toBe('confirmed')
     expect(loadWishes()[0].billId).toBe(confirmed.bill.id)
     expect(
@@ -344,14 +366,15 @@ describe('结算与孵化', () => {
       (egg) => egg.id === eggId,
     )
     expect(first?.hatched).toBe(true)
-    expect(getSpiritCollectionSummary().progress).toBe(1)
+    const progressAfterHatch = getSpiritCollectionSummary().progress
+    expect(progressAfterHatch).toBeGreaterThanOrEqual(1)
 
     const spiritId = first?.spiritId
     const second = syncEggHatch(new Date(now.getTime() + 5 * DAY_MS)).find(
       (egg) => egg.id === eggId,
     )
     expect(second?.spiritId).toBe(spiritId)
-    expect(getSpiritCollectionSummary().progress).toBe(1)
+    expect(getSpiritCollectionSummary().progress).toBe(progressAfterHatch)
   })
 
   it('演示孵化不写入正式图鉴', () => {
@@ -360,10 +383,11 @@ describe('结算与孵化', () => {
     settleDemoMonth(now, { bills: loadBills(), settings: SETTINGS, now })
     const demoEgg = loadDemoEggs()[0]
     expect(demoEgg).toBeTruthy()
+    const progressBefore = getSpiritCollectionSummary().progress
 
     const result = hatchDemoEgg(demoEgg.id, new Date(now.getTime() + DAY_MS))
     expect(result).not.toBeNull()
-    expect(getSpiritCollectionSummary().progress).toBe(0)
+    expect(getSpiritCollectionSummary().progress).toBe(progressBefore)
     expect(loadEggs()).toHaveLength(0)
   })
 })

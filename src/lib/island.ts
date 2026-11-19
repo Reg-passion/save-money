@@ -6,10 +6,11 @@ import {
   DEFAULT_SAVINGS_GOAL_CENTS,
   ISLAND_HP_MAX,
 } from '../data/constants'
-import type { CategoryId } from '../types'
+import type { CategoryId, SummonOutcome } from '../types'
 import { isCents, yuanToCents } from './money'
 import { pickMonsterForBill } from './monsters'
 import { readJSON, writeJSON } from './storage'
+import { decideSummon, recordSpiritEncounter } from './summon'
 
 export interface IslandSettings {
   islandName: string
@@ -28,6 +29,9 @@ export interface Bill {
   monsterId: string
   source: BillSource
   sourceWishId?: string
+  summonedSpiritId?: string | null
+  summonOutcome?: SummonOutcome | null
+  spiritIsNew?: boolean
 }
 
 export interface NewBillInput {
@@ -166,6 +170,15 @@ function normalizeStoredBill(value: unknown): NormalizedBillBase | null {
         : undefined,
     source,
     sourceWishId: typeof bill.sourceWishId === 'string' ? bill.sourceWishId : undefined,
+    summonedSpiritId:
+      typeof bill.summonedSpiritId === 'string' && SPIRIT_BY_ID[bill.summonedSpiritId]
+        ? bill.summonedSpiritId
+        : null,
+    summonOutcome:
+      bill.summonOutcome === 'spirit' || bill.summonOutcome === 'energy'
+        ? bill.summonOutcome
+        : null,
+    spiritIsNew: bill.spiritIsNew === true,
   }
 }
 
@@ -225,18 +238,25 @@ export function createBill(input: NewBillInput, options: CreateBillOptions = {})
     note: input.note.trim(),
     time: time.toISOString(),
   }
-  const monsterId = pickMonsterForBill(seed, priorBills, {
-    forceBoss: options.forceBoss,
-  }).id
+  const decision = decideSummon(seed, priorBills)
+  const monsterId =
+    decision.spirit?.id ??
+    pickMonsterForBill(seed, priorBills, {
+      forceBoss: options.forceBoss,
+    }).id
 
   const bill: Bill = {
     ...seed,
     monsterId,
     source: options.source ?? 'manual',
+    summonedSpiritId: decision.spirit?.id ?? null,
+    summonOutcome: decision.outcome,
+    spiritIsNew: decision.isNew,
   }
   if (options.sourceWishId) bill.sourceWishId = options.sourceWishId
 
   writeJSON(BILLS_KEY, [bill, ...priorBills])
+  if (decision.spirit) recordSpiritEncounter(decision.spirit.id)
   return bill
 }
 

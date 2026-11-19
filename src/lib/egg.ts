@@ -6,7 +6,17 @@ import {
   RARE_BONUS_RATE,
   RARE_TOTAL_CAP,
 } from '../data/constants'
-import type { EggTier } from '../types'
+import type { EggState, EggTier, IslandState } from '../types'
+import {
+  dailyScore,
+  eggTierForScore,
+  rareChanceForTier,
+  startOfWeek,
+  sumTransactions,
+  toDateKey,
+  weekDates,
+  weeklyBudgetBonus,
+} from './budget'
 import {
   loadBills,
   loadSettings,
@@ -700,3 +710,95 @@ export function hatchDemoEgg(eggId: string, now = new Date()): HatchResult | nul
   saveDemoEggs(eggs)
   return result
 }
+
+export function createEggState(cycleStart: string): EggState {
+  return {
+    cycleStart,
+    score: 0,
+    dailyScores: {},
+    tier: null,
+    hatched: false,
+    hatchedSpiritId: null,
+    skippedTower: false,
+  }
+}
+
+export function settleDay(state: IslandState, date: string): IslandState {
+  if (state.egg.dailyScores[date] !== undefined) return state
+  const spentCents = state.transactions
+    .filter((transaction) => transaction.date === date)
+    .reduce((sum, transaction) => sum + transaction.amountCents, 0)
+  const score = dailyScore(spentCents, state.budgets.daily)
+  return {
+    ...state,
+    egg: {
+      ...state.egg,
+      score: state.egg.score + score,
+      dailyScores: { ...state.egg.dailyScores, [date]: score },
+    },
+  }
+}
+
+export function settleDueDays(state: IslandState, now: Date = new Date()): IslandState {
+  const today = toDateKey(now)
+  const dates = new Set(
+    state.transactions
+      .map((transaction) => transaction.date)
+      .filter((date) => date < today && state.egg.dailyScores[date] === undefined),
+  )
+  let next = state
+  for (const date of [...dates].sort()) next = settleDay(next, date)
+  return next
+}
+
+export function finalizeWeeklyEgg(
+  state: IslandState,
+  anchor: Date | string = state.egg.cycleStart || new Date(),
+  now: Date = new Date(),
+): IslandState {
+  if (state.egg.hatched) return state
+  const monday = startOfWeek(anchor instanceof Date ? anchor : new Date(anchor))
+  const dates = weekDates(monday)
+  const dateSet = new Set(dates)
+  const spentCents = sumTransactions(
+    state.transactions.filter((transaction) => dateSet.has(transaction.date)),
+  )
+  const rawScore = dates.reduce((sum, date) => {
+    if (state.egg.dailyScores[date] !== undefined) return sum + state.egg.dailyScores[date]
+    const spent = state.transactions
+      .filter((transaction) => transaction.date === date)
+      .reduce((total, transaction) => total + transaction.amountCents, 0)
+    return sum + dailyScore(spent, state.budgets.daily)
+  }, 0)
+  const score = Math.min(115, rawScore + weeklyBudgetBonus(spentCents, state.budgets.weekly))
+  const tier = eggTierForScore(score)
+  const rareRoll = (hashString(`${toDateKey(monday)}:v2-rare`) % 10000) / 10000
+  const pool = CATALOG.filter((spirit) =>
+    rareRoll < rareChanceForTier(tier) ? spirit.rarity === 'rare' : spirit.rarity === 'normal',
+  )
+  const candidates = pool.length > 0 ? pool : CATALOG.filter((spirit) => spirit.rarity === 'normal')
+  const spirit = candidates[hashString(`${toDateKey(monday)}:v2-spirit`) % candidates.length]
+  const previous = state.spirits[spirit.id]
+
+  return {
+    ...state,
+    egg: {
+      ...state.egg,
+      cycleStart: toDateKey(monday),
+      score,
+      tier,
+      hatched: true,
+      hatchedSpiritId: spirit.id,
+    },
+    spirits: {
+      ...state.spirits,
+      [spirit.id]: {
+        count: (previous?.count ?? 0) + 1,
+        evolved: previous?.evolved ?? false,
+        firstSeenAt: previous?.firstSeenAt ?? now.toISOString(),
+      },
+    },
+  }
+}
+
+export { dailyScore, eggTierForScore, rareChanceForTier }

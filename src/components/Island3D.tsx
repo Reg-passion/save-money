@@ -14,6 +14,7 @@ interface Island3DProps {
   dayNight: number
   hp: number
   coinSignal: number
+  panel?: boolean
   onReady?: () => void
   onUnavailable?: () => void
 }
@@ -901,6 +902,7 @@ export default function Island3D({
   dayNight,
   hp,
   coinSignal,
+  panel = false,
   onReady,
   onUnavailable,
 }: Island3DProps) {
@@ -959,7 +961,11 @@ export default function Island3D({
 
   return (
     <div
-      className="pointer-events-auto fixed inset-0 z-0 overflow-hidden"
+      className={
+        panel
+          ? 'pointer-events-auto absolute inset-0 overflow-hidden'
+          : 'pointer-events-auto fixed inset-0 z-0 overflow-hidden'
+      }
       style={{ background: getSkyGradient(dayNight) }}
       data-island-3d={ready ? 'ready' : 'loading'}
       aria-hidden="true"

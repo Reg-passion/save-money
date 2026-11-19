@@ -436,7 +436,7 @@ export default function Codex() {
         <div className="mt-1 flex items-end justify-between gap-3">
           <div>
             <h1 className="text-xl font-bold text-ink">精灵图鉴</h1>
-            <p className="mt-1 text-sm text-ink/55">精灵来自月底的蛋，账单只会引来怪物。</p>
+            <p className="mt-1 text-sm text-ink/55">记账会按分类和金额召唤精灵，周蛋还能再孵一只。</p>
           </div>
           <p className="shrink-0 text-lg font-bold text-ink">
             {summary.progress}
@@ -465,7 +465,7 @@ export default function Codex() {
             <p className="text-sm font-semibold text-ink">月度结算的蛋</p>
           </div>
           <p className="mt-0.5 text-[10px] leading-relaxed text-ink/40">
-            消费账单只生成攻岛的怪物，不会直接增加收藏；精灵只能孵出来。
+            每笔记账最多召唤 5 只精灵；重复遇见会累计次数，图鉴按不同精灵计算进度。
           </p>
         </div>
         <p className="mt-2 text-[11px] text-ink/40">

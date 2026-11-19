@@ -1,4 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react'
+import { SPIRIT_BY_ID } from '../data/catalog'
 import { CATEGORIES } from '../data/categories'
 import type { ExpenseOutcome } from '../lib/expense'
 import { toDateTimeLocalValue, type NewBillInput } from '../lib/island'
@@ -57,9 +58,18 @@ export default function AddBill({ onAdd }: AddBillProps) {
         setFeedback(
           `已放入许愿池：${formatCents(outcome.wish.amountCents)} 元。24 小时后才能确认入账，也可以提前取消。`,
         )
-      } else {
+      } else if (outcome.bill.summonOutcome === 'energy') {
         setFeedback(
-          `已记账：${formatCents(outcome.bill.amountCents)} 元，消费怪物已经出现。`,
+          `已记账：${formatCents(outcome.bill.amountCents)} 元。今天的 5 只精灵已经召唤满，这一笔只增加岛屿能量。`,
+        )
+      } else {
+        const spirit = outcome.bill.summonedSpiritId
+          ? SPIRIT_BY_ID[outcome.bill.summonedSpiritId]
+          : null
+        setFeedback(
+          spirit
+            ? `已记账：${formatCents(outcome.bill.amountCents)} 元，${outcome.bill.spiritIsNew ? `新精灵「${spirit.name}」已进图鉴。` : `再次遇见「${spirit.name}」，出现次数 +1。`}`
+            : `已记账：${formatCents(outcome.bill.amountCents)} 元。`,
         )
       }
       setAmount('')

@@ -53,6 +53,7 @@ interface MonsterAnimationProps {
   bill: Bill
   hpBefore: number
   hpAfter: number
+  isNewSpirit?: boolean
   onDone: () => void
 }
 
@@ -96,6 +97,7 @@ export default function MonsterAnimation({
   bill,
   hpBefore,
   hpAfter,
+  isNewSpirit = false,
   onDone,
 }: MonsterAnimationProps) {
   const [drained, setDrained] = useState(false)
@@ -137,13 +139,15 @@ export default function MonsterAnimation({
   const guardian = getGuardian(monster.id)
   const hpDelta = Math.max(0, hpBefore - hpAfter)
   const barWidth = Math.max(0, Math.min(100, drained ? hpAfter : hpBefore))
-  const headline = `怪物来袭 · ${monster.name}`
+  const headline = isNewSpirit ? `新精灵入图鉴 · ${monster.name}` : `再次遇见 · ${monster.name}`
   const subline =
     bill.source === 'wish' && bill.amountCents >= WISH_THRESHOLD_CENTS
-      ? '愿望确认后，这笔大额消费变成了 Boss；守岛精灵迎了上去。'
+      ? '愿望确认后，这笔大额消费变成 Boss；守岛精灵迎了上去。'
       : bill.source === 'wish'
         ? '愿望确认后，这笔计划消费变成正式账单；守岛精灵迎了上去。'
-        : '这笔账单召唤出消费怪物，守岛精灵挡在前面。怪物只参与攻岛，不进图鉴。'
+        : isNewSpirit
+          ? '这笔账单按分类和金额召唤出它，图鉴进度 +1。'
+          : '它已经在图鉴里，这次遇见会累计出现次数。'
 
   return (
     <div
@@ -241,7 +245,7 @@ export default function MonsterAnimation({
           </div>
 
           <p className="mt-1.5 text-[10px] text-ink/35">
-            按本月累计支出统一扣血，与账单笔数无关；怪物只出场，不增加精灵收藏。
+            每天最多召唤 5 只精灵，超过只增加岛屿能量；图鉴进度按不同精灵计算。
           </p>
         </div>
       </div>

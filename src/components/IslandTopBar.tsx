@@ -1,10 +1,5 @@
-import { WEATHER_LABEL, type IslandSettings, type MonthSummary, type Weather } from '../lib/island'
+import { WEATHER_LABEL, type Weather } from '../lib/island'
 import { formatCents } from '../lib/money'
-import {
-  BUILDING_LABELS,
-  getProgressPercent,
-  getUnlockedBuildings,
-} from '../lib/island3d'
 import DataBackup from './DataBackup'
 
 const WEATHER_CHIP: Record<Weather, string> = {
@@ -16,14 +11,20 @@ const WEATHER_CHIP: Record<Weather, string> = {
 }
 
 interface IslandTopBarProps {
-  settings: IslandSettings
-  summary: MonthSummary
+  islandName: string
   weather: Weather
-  progress: number
   dayNight: number
   soundOn: boolean
   onDayNightChange: (value: number) => void
   onToggleSound: () => void
+  todaySpentCents: number
+  dailyBudgetCents: number
+  weekSpentCents: number
+  weeklyBudgetCents: number
+  codexProgress: number
+  codexTotal: number
+  summonedToday: number
+  summonLimit: number
 }
 
 function SoundIcon({ on }: { on: boolean }) {
@@ -52,38 +53,74 @@ function SoundIcon({ on }: { on: boolean }) {
 }
 
 export default function IslandTopBar({
-  settings,
-  summary,
+  islandName,
   weather,
-  progress,
   dayNight,
   soundOn,
   onDayNightChange,
   onToggleSound,
+  todaySpentCents,
+  dailyBudgetCents,
+  weekSpentCents,
+  weeklyBudgetCents,
+  codexProgress,
+  codexTotal,
+  summonedToday,
+  summonLimit,
 }: IslandTopBarProps) {
-  const percent = getProgressPercent(progress)
-  const unlocked = getUnlockedBuildings(progress)
-  const stage = BUILDING_LABELS[unlocked[unlocked.length - 1] ?? 'camp']
+  const dayPercent = Math.min(
+    100,
+    Math.round((todaySpentCents / Math.max(1, dailyBudgetCents)) * 100),
+  )
 
   return (
-    <header className="glass-panel pointer-events-auto sticky top-3 z-20 px-4 py-3.5">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="whitespace-nowrap text-[8px] font-semibold tracking-[0.24em] text-ink/35 sm:text-[9px] sm:tracking-[0.34em]">
-            MONEY ISLAND
-          </p>
-          <h1 className="mt-0.5 truncate text-[22px] font-bold leading-tight text-ink">
-            {settings.islandName}
-          </h1>
+    <header className="glass-panel pointer-events-auto sticky top-2 z-20 px-3 py-2.5 sm:px-4">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="hidden text-[8px] font-semibold tracking-[0.28em] text-ink/30 sm:inline">
+              MONEY ISLAND
+            </span>
+            <h1 className="truncate text-base font-bold leading-tight text-ink sm:text-lg">
+              {islandName}
+            </h1>
+            <span
+              className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold ${WEATHER_CHIP[weather]}`}
+            >
+              {WEATHER_LABEL[weather]}
+            </span>
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-ink/45">
+            <span>
+              今日{' '}
+              <b className={todaySpentCents > dailyBudgetCents ? 'text-[#B14E3D]' : 'text-ink'}>
+                {formatCents(todaySpentCents)}
+              </b>{' '}
+              / {formatCents(dailyBudgetCents)} 元
+            </span>
+            <span>
+              本周{' '}
+              <b className="text-ink">{formatCents(weekSpentCents)}</b> /{' '}
+              {formatCents(weeklyBudgetCents)} 元
+            </span>
+            <span>
+              图鉴{' '}
+              <b className="text-ink">
+                {codexProgress}/{codexTotal}
+              </b>
+            </span>
+            <span>
+              精灵{' '}
+              <b className="text-ink">
+                {summonedToday}/{summonLimit}
+              </b>
+            </span>
+          </div>
         </div>
+
         <div className="flex shrink-0 items-center gap-1.5">
-          <span
-            className={`hidden rounded-full px-2 py-1 text-[10px] font-semibold sm:inline-flex ${WEATHER_CHIP[weather]}`}
-          >
-            {WEATHER_LABEL[weather]}
-          </span>
-          <div className="flex h-10 items-center gap-1 rounded-full border border-white/55 bg-white/35 px-2">
-            <span className="text-[10px] text-ink/35" aria-hidden="true">
+          <div className="hidden h-9 items-center gap-1 rounded-full border border-white/55 bg-white/35 px-2 md:flex">
+            <span className="text-[9px] text-ink/35" aria-hidden="true">
               夜
             </span>
             <input
@@ -94,9 +131,9 @@ export default function IslandTopBar({
               value={dayNight}
               onChange={(event) => onDayNightChange(Number(event.target.value))}
               aria-label="昼夜切换"
-              className="day-night-slider w-12 sm:w-20"
+              className="day-night-slider w-14"
             />
-            <span className="text-[10px] text-ink/50" aria-hidden="true">
+            <span className="text-[9px] text-ink/50" aria-hidden="true">
               昼
             </span>
           </div>
@@ -114,47 +151,22 @@ export default function IslandTopBar({
         </div>
       </div>
 
-      <p className="mt-1 truncate text-[10px] leading-relaxed text-ink/45">
-        {summary.monthLabel} · 日均预算 {formatCents(summary.dailyBudgetCents)} 元 · 存钱目标{' '}
-        {formatCents(settings.savingsGoalCents)} 元
-      </p>
-
-      <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-[11px] text-ink/55">
-        <span>
-          本月已花{' '}
-          <b className="text-sm font-semibold text-ink">{formatCents(summary.spentCents)}</b> /{' '}
-          {formatCents(settings.monthlyBudgetCents)} 元
-        </span>
-        <span className={summary.isOverspent ? 'font-medium text-[#B14E3D]' : ''}>
-          {summary.isOverspent
-            ? `超支 ${formatCents(Math.abs(summary.remainingCents))} 元`
-            : `还剩 ${formatCents(summary.remainingCents)} 元`}
-        </span>
-      </div>
-
-      <div className="mt-2 flex items-center gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline justify-between gap-2 text-[9px] text-ink/40">
-            <span className="truncate">省钱进度 {percent}%</span>
-            <span className="shrink-0 truncate">{stage}</span>
-          </div>
-          <div
-            className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/55"
-            role="progressbar"
-            aria-label="省钱进度"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={percent}
-          >
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-[#6dbb79] via-[#95c97f] to-[#f0c85a] transition-[width] duration-700 ease-out"
-              style={{ width: `${percent}%` }}
-            />
-          </div>
-        </div>
-        <span className={`shrink-0 rounded-full px-2 py-1 text-[9px] font-semibold sm:hidden ${WEATHER_CHIP[weather]}`}>
-          {WEATHER_LABEL[weather]}
-        </span>
+      <div
+        className="mt-2 h-1 overflow-hidden rounded-full bg-white/55"
+        role="progressbar"
+        aria-label="今日预算使用"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={dayPercent}
+      >
+        <div
+          className={`h-full rounded-full transition-[width] duration-500 ${
+            todaySpentCents > dailyBudgetCents
+              ? 'bg-[#D7775E]'
+              : 'bg-gradient-to-r from-[#6dbb79] to-[#f0c85a]'
+          }`}
+          style={{ width: `${dayPercent}%` }}
+        />
       </div>
     </header>
   )

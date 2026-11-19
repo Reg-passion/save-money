@@ -27,7 +27,7 @@ function hashString(input: string): number {
   return hash >>> 0
 }
 
-function matchSpecialMonster(bill: MonsterSource): Spirit | null {
+export function matchSpecialSpirit(bill: MonsterSource): Spirit | null {
   const note = bill.note.trim()
   const hour = new Date(bill.time).getHours()
 
@@ -96,7 +96,7 @@ export function pickMonsterForBill(
   priorBills: MonsterSource[] = [],
   options: { forceBoss?: boolean } = {},
 ): Spirit {
-  const special = matchSpecialMonster(bill)
+  const special = matchSpecialSpirit(bill)
   if (special) return special
 
   const family = CATEGORY_SPIRITS[bill.category]
