@@ -2,6 +2,7 @@ import { useState } from 'react'
 import AddBill from '../components/AddBill'
 import Island from '../components/Island'
 import MonsterAnimation from '../components/MonsterAnimation'
+import Settlement from '../components/Settlement'
 import { CATEGORIES } from '../data/categories'
 import {
   createBill,
@@ -60,6 +61,8 @@ export default function IslandPage() {
       />
 
       <AddBill onAdd={handleAdd} />
+
+      <Settlement summary={summary} settings={settings} />
 
       <section>
         <div className="flex items-baseline justify-between">
