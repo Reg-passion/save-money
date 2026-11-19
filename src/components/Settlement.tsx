@@ -1,17 +1,26 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { RARE_BONUS_CAP, RARE_TOTAL_CAP } from '../data/constants'
 import {
   EGG_TIER_LABEL,
   formatPercent,
+  hatchDemoEgg,
+  loadDemoEggs,
+  loadDemoSettlements,
+  loadEggs,
   loadSettlements,
   NO_EGG_REASON_LABEL,
   previewSettlement,
-  settleMonth,
+  resetDemoMonth,
+  settleDemoMonth,
   settlePendingMonths,
+  syncEggHatch,
   type EggCalculation,
+  type EggRecord,
+  type HatchResult,
   type SettlementRecord,
 } from '../lib/egg'
-import { formatYuan, type IslandSettings, type MonthSummary } from '../lib/island'
+import { formatCents } from '../lib/money'
+import type { IslandSettings, MonthSummary } from '../lib/island'
 import Egg from './Egg'
 
 interface SettlementProps {
@@ -43,18 +52,18 @@ function CalculationBreakdown({ calculation }: { calculation: EggCalculation }) 
         <div className="flex items-baseline justify-between gap-3">
           <dt className="shrink-0 whitespace-nowrap">本月已省</dt>
           <dd className="min-w-0 text-right">
-            <b className="font-semibold text-ink">{formatYuan(calculation.saved)} 元</b> / 目标{' '}
-            {formatYuan(calculation.goal)} 元
+            <b className="font-semibold text-ink">{formatCents(calculation.savedCents)} 元</b> / 目标{' '}
+            {formatCents(calculation.goalCents)} 元
           </dd>
         </div>
         <div className="flex items-baseline justify-between gap-3">
           <dt className="shrink-0 whitespace-nowrap">多存部分</dt>
-          <dd className="min-w-0 text-right">{formatYuan(calculation.extraSaved)} 元</dd>
+          <dd className="min-w-0 text-right">{formatCents(calculation.extraSavedCents)} 元</dd>
         </div>
         <div className="flex items-baseline justify-between gap-3">
           <dt className="shrink-0 whitespace-nowrap">多存加成</dt>
           <dd className="min-w-0 text-right">
-            {formatYuan(calculation.extraSaved)} / {formatYuan(calculation.goal)} × 30% ={' '}
+            {formatCents(calculation.extraSavedCents)} / {formatCents(calculation.goalCents)} × 30% ={' '}
             {formatPercent(calculation.bonusRate)}
           </dd>
         </div>
@@ -83,13 +92,14 @@ function NoEggNote({ record }: { record: SettlementRecord }) {
       <p className="font-semibold">这个月没有蛋</p>
       <p className="mt-1">
         {record.noEggReason === 'overspent'
-          ? `本月超预算 ${formatYuan(Math.abs(record.saved))} 元。`
+          ? `本月超预算 ${formatCents(Math.abs(record.savedCents))} 元。`
           : record.noEggReason === 'zero-hp'
             ? '岛血量已经归 0。'
             : NO_EGG_REASON_LABEL[record.noEggReason ?? 'no-bills']}
       </p>
       <p className="mt-1 text-[#9A6B3E]/80">
-        本月已花 {formatYuan(record.spent)} / {formatYuan(record.budget)} 元 · 岛血 {record.hp} / 100
+        本月已花 {formatCents(record.spentCents)} / {formatCents(record.budgetCents)} 元 · 岛血{' '}
+        {record.hp} / 100
       </p>
     </div>
   )
@@ -104,7 +114,7 @@ function SettlementResult({ record }: { record: SettlementRecord }) {
         </span>
         {record.demo && (
           <span className="rounded-full bg-ink/5 px-2 py-0.5 text-[10px] font-medium text-ink/40">
-            演示
+            演示 · 独立存储
           </span>
         )}
         <span
@@ -119,11 +129,14 @@ function SettlementResult({ record }: { record: SettlementRecord }) {
       {record.hasEgg && record.calculation ? (
         <>
           <p className="mt-2 text-[11px] leading-relaxed text-ink/45">
-            本月已花 {formatYuan(record.spent)} / {formatYuan(record.budget)} 元 · 岛血 {record.hp} / 100
+            本月已花 {formatCents(record.spentCents)} / {formatCents(record.budgetCents)} 元 · 岛血{' '}
+            {record.hp} / 100
           </p>
           <CalculationBreakdown calculation={record.calculation} />
           <p className="mt-2 text-[11px] leading-relaxed text-leaf">
-            蛋已经放进孵化栏：每天记一笔，3 天后孵出精灵。
+            {record.demo
+              ? '演示蛋在下面的演示孵化栏，可随时重置。'
+              : '蛋已经放进孵化栏：每天记一笔，3 天后孵出精灵。'}
           </p>
         </>
       ) : (
@@ -134,33 +147,66 @@ function SettlementResult({ record }: { record: SettlementRecord }) {
 }
 
 export default function Settlement({ summary, settings }: SettlementProps) {
-  const [settlements, setSettlements] = useState<SettlementRecord[]>(() => {
-    settlePendingMonths()
-    return loadSettlements()
-  })
-  const [refreshKey, setRefreshKey] = useState(0)
+  const [settlements, setSettlements] = useState<SettlementRecord[]>(() => loadSettlements())
+  const [eggs, setEggs] = useState<EggRecord[]>(() => loadEggs())
+  const [demoSettlements, setDemoSettlements] = useState<SettlementRecord[]>(() =>
+    loadDemoSettlements(),
+  )
+  const [demoEggs, setDemoEggs] = useState<EggRecord[]>(() => loadDemoEggs())
   const [notice, setNotice] = useState<string | null>(null)
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      const created = settlePendingMonths()
+      setSettlements(loadSettlements())
+      setEggs(syncEggHatch())
+      if (created.length > 0) {
+        setNotice(`已补结算 ${created.length} 个历史月份，正式结果不受演示影响。`)
+      }
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [summary.bills.length, summary.monthLabel])
 
   const preview = previewSettlement(summary, settings)
   const currentSettlement = settlements.find((record) => record.monthKey === preview.monthKey)
   const latestPast =
     [...settlements].reverse().find((record) => record.monthKey < preview.monthKey) ?? null
+  const demoCurrent = demoSettlements.find((record) => record.monthKey === preview.monthKey)
 
   function handleDemoSettle() {
-    const record = settleMonth(new Date(), { demo: true })
-    setSettlements(loadSettlements())
-    setRefreshKey((value) => value + 1)
-    setNotice(
-      record?.hasEgg
-        ? '演示结算完成，蛋已经放进孵化栏。'
-        : '演示结算完成：这个月没有蛋。',
-    )
+    try {
+      const record = settleDemoMonth(new Date(), { bills: summary.bills, settings })
+      setDemoSettlements(loadDemoSettlements())
+      setDemoEggs(loadDemoEggs())
+      setNotice(
+        record
+          ? record.hasEgg
+            ? '演示结算完成：蛋在演示孵化栏，可随时重置。'
+            : '演示结算完成：这个月没有蛋。'
+          : '本月还没有账单，无法演示结算。',
+      )
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : '演示结算失败')
+    }
+  }
+
+  function handleResetDemo() {
+    const removed = resetDemoMonth(preview.monthKey)
+    setDemoSettlements(loadDemoSettlements())
+    setDemoEggs(loadDemoEggs())
+    setNotice(removed ? '演示数据已重置，正式结算不受影响。' : '没有可重置的演示数据。')
+  }
+
+  function handleDemoHatch(eggId: string): HatchResult | null {
+    const result = hatchDemoEgg(eggId)
+    setDemoEggs(loadDemoEggs())
+    return result
   }
 
   const savedLabel =
-    preview.saved >= 0
-      ? `已省 ${formatYuan(preview.saved)} 元`
-      : `超支 ${formatYuan(Math.abs(preview.saved))} 元`
+    preview.savedCents >= 0
+      ? `已省 ${formatCents(preview.savedCents)} 元`
+      : `超支 ${formatCents(Math.abs(preview.savedCents))} 元`
 
   return (
     <>
@@ -216,7 +262,7 @@ export default function Settlement({ summary, settings }: SettlementProps) {
                   {preview.monthLabel} · {savedLabel}
                 </p>
                 <p className="mt-1 text-[11px] leading-relaxed text-ink/45">
-                  本月已花 {formatYuan(preview.spent)} / {formatYuan(preview.budget)} 元 · 岛血{' '}
+                  本月已花 {formatCents(preview.spentCents)} / {formatCents(preview.budgetCents)} 元 · 岛血{' '}
                   {preview.hp} / 100
                 </p>
 
@@ -232,24 +278,13 @@ export default function Settlement({ summary, settings }: SettlementProps) {
                     <p className="font-semibold">月底不会有蛋</p>
                     <p className="mt-1">
                       {preview.noEggReason === 'overspent'
-                        ? `本月已超预算 ${formatYuan(Math.abs(preview.saved))} 元。`
+                        ? `本月已超预算 ${formatCents(Math.abs(preview.savedCents))} 元。`
                         : preview.noEggReason === 'zero-hp'
                           ? '岛血量为 0，撑不到结算。'
                           : '本月还没有账单。'}
                     </p>
                   </div>
                 )}
-
-                <button
-                  type="button"
-                  onClick={handleDemoSettle}
-                  className="mt-3 min-h-11 w-full rounded-xl border border-ink/15 bg-white/75 px-3 text-xs font-medium text-ink/60 transition-colors hover:bg-white hover:text-ink"
-                >
-                  演示结算本月
-                </button>
-                <p className="mt-1.5 text-[10px] leading-relaxed text-ink/35">
-                  演示会立即锁定本月结果；正式使用在次月第一次打开时自动结算。
-                </p>
               </>
             ) : (
               <p className="mt-3 rounded-2xl border border-dashed border-ink/15 bg-white/45 px-4 py-6 text-center text-xs leading-relaxed text-ink/45">
@@ -259,12 +294,53 @@ export default function Settlement({ summary, settings }: SettlementProps) {
           </>
         )}
 
+        <div className="mt-4 rounded-2xl border border-dashed border-ink/20 bg-ink/[0.03] p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <p className="text-[10px] font-semibold tracking-[0.2em] text-ink/35">DEMO</p>
+              <p className="text-xs font-semibold text-ink">演示结算</p>
+            </div>
+            {demoCurrent && (
+              <button
+                type="button"
+                onClick={handleResetDemo}
+                className="min-h-9 rounded-xl border border-ink/15 bg-white/70 px-2.5 text-[11px] font-medium text-ink/55 transition-colors hover:bg-white hover:text-ink"
+              >
+                重置演示
+              </button>
+            )}
+          </div>
+          <p className="mt-1 text-[10px] leading-relaxed text-ink/40">
+            独立存储：不锁定本月正式结算，也不写入正式图鉴。
+          </p>
+
+          {demoCurrent ? (
+            <SettlementResult record={demoCurrent} />
+          ) : preview.hasBills ? (
+            <button
+              type="button"
+              onClick={handleDemoSettle}
+              className="mt-2 min-h-11 w-full rounded-xl border border-ink/15 bg-white/75 px-3 text-xs font-medium text-ink/60 transition-colors hover:bg-white hover:text-ink"
+            >
+              演示结算本月（不影响正式结算）
+            </button>
+          ) : (
+            <p className="mt-2 rounded-xl border border-dashed border-ink/15 bg-white/45 px-3 py-4 text-center text-[11px] text-ink/40">
+              本月还没有账单，暂不能演示。
+            </p>
+          )}
+        </div>
+
         <p className="mt-3 border-t border-ink/5 pt-2 text-[10px] leading-relaxed text-ink/35">
-          下月自动重开，图鉴和已孵精灵都不清零。
+          下月自动重开，图鉴和已孵精灵都不清零。正式结算每月只做一次。
         </p>
       </section>
 
-      <Egg key={`${summary.bills.length}-${refreshKey}`} />
+      <Egg eggs={eggs} />
+
+      {demoEggs.length > 0 && (
+        <Egg eggs={demoEggs} variant="demo" onDemoHatch={handleDemoHatch} />
+      )}
     </>
   )
 }

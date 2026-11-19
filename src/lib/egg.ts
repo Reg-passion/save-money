@@ -15,11 +15,14 @@ import {
   type IslandSettings,
   type MonthSummary,
 } from './island'
+import { yuanToCents } from './money'
 import { readJSON, writeJSON } from './storage'
+import { addSpiritToCollection, getOwnedSpiritIds } from './summon'
 
 const EGGS_KEY = 'eggs'
 const SETTLEMENTS_KEY = 'settlements'
-const SUMMON_KEY = 'summon'
+const DEMO_EGGS_KEY = 'demo-eggs'
+const DEMO_SETTLEMENTS_KEY = 'demo-settlements'
 
 export const EGG_TIER_LABEL: Record<EggTier, string> = {
   normal: '普通蛋',
@@ -43,9 +46,9 @@ export const NO_EGG_REASON_LABEL: Record<NoEggReason, string> = {
 
 export interface EggCalculation {
   tier: EggTier
-  saved: number
-  goal: number
-  extraSaved: number
+  savedCents: number
+  goalCents: number
+  extraSavedCents: number
   baseRate: number
   bonusRate: number
   rareChance: number
@@ -56,10 +59,10 @@ export interface EggCalculation {
 export interface EggPreview {
   monthKey: string
   monthLabel: string
-  budget: number
-  spent: number
-  saved: number
-  goal: number
+  budgetCents: number
+  spentCents: number
+  savedCents: number
+  goalCents: number
   hp: number
   isOverspent: boolean
   hasBills: boolean
@@ -74,8 +77,8 @@ export interface EggRecord {
   monthKey: string
   monthLabel: string
   tier: EggTier
-  saved: number
-  goal: number
+  savedCents: number
+  goalCents: number
   baseRate: number
   bonusRate: number
   rareChance: number
@@ -86,16 +89,17 @@ export interface EggRecord {
   spiritId: string | null
   spiritRarity: Rarity | null
   isNewSpirit: boolean | null
+  demo: boolean
 }
 
 export interface SettlementRecord {
   id: string
   monthKey: string
   monthLabel: string
-  budget: number
-  spent: number
-  saved: number
-  goal: number
+  budgetCents: number
+  spentCents: number
+  savedCents: number
+  goalCents: number
   hp: number
   isOverspent: boolean
   hasEgg: boolean
@@ -128,8 +132,20 @@ function isRarity(value: unknown): value is Rarity {
   return value === 'normal' || value === 'rare' || value === 'hidden'
 }
 
-function round2(value: number): number {
-  return Math.round(value * 100) / 100
+function isSignedCents(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value)
+}
+
+function positiveCents(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : fallback
+}
+
+function legacyCents(centsValue: unknown, yuanValue: unknown, fallback: number): number {
+  if (isSignedCents(centsValue)) return centsValue
+  if (typeof yuanValue === 'number' && Number.isFinite(yuanValue)) {
+    return yuanToCents(yuanValue)
+  }
+  return fallback
 }
 
 function round4(value: number): number {
@@ -146,17 +162,17 @@ function localDayKey(date: Date): string {
   ).padStart(2, '0')}`
 }
 
-export function getEggTier(saved: number): EggTier {
-  if (saved > 300) return 'gold'
-  if (saved >= 100) return 'silver'
+export function getEggTier(savedCents: number): EggTier {
+  if (savedCents > 30000) return 'gold'
+  if (savedCents >= 10000) return 'silver'
   return 'normal'
 }
 
-export function calculateEgg(saved: number, goal: number): EggCalculation {
-  const safeGoal = goal > 0 ? goal : 1
-  const tier = getEggTier(saved)
-  const extraSaved = Math.max(0, round2(saved - safeGoal))
-  const rawBonus = (extraSaved / safeGoal) * RARE_BONUS_RATE
+export function calculateEgg(savedCents: number, goalCents: number): EggCalculation {
+  const safeGoal = goalCents > 0 ? goalCents : 1
+  const tier = getEggTier(savedCents)
+  const extraSavedCents = Math.max(0, savedCents - safeGoal)
+  const rawBonus = (extraSavedCents / safeGoal) * RARE_BONUS_RATE
   const bonusRate = Math.min(RARE_BONUS_CAP, round4(rawBonus))
   const baseRate = EGG_BASE_RARE_RATE[tier]
   const rawTotal = baseRate + bonusRate
@@ -164,9 +180,9 @@ export function calculateEgg(saved: number, goal: number): EggCalculation {
 
   return {
     tier,
-    saved: round2(saved),
-    goal: round2(safeGoal),
-    extraSaved,
+    savedCents,
+    goalCents: safeGoal,
+    extraSavedCents,
     baseRate,
     bonusRate,
     rareChance,
@@ -195,47 +211,48 @@ export function previewSettlement(
         ? 'zero-hp'
         : null
   const hasEgg = noEggReason === null
-  const saved = round2(summary.remaining)
 
   return {
     monthKey: getMonthKey(now),
     monthLabel: summary.monthLabel,
-    budget: settings.monthlyBudget,
-    spent: summary.spent,
-    saved,
-    goal: settings.savingsGoal,
+    budgetCents: settings.monthlyBudgetCents,
+    spentCents: summary.spentCents,
+    savedCents: summary.remainingCents,
+    goalCents: settings.savingsGoalCents,
     hp: summary.hp,
     isOverspent: summary.isOverspent,
     hasBills,
     hasEgg,
     noEggReason,
-    calculation: hasEgg ? calculateEgg(saved, settings.savingsGoal) : null,
+    calculation: hasEgg
+      ? calculateEgg(summary.remainingCents, settings.savingsGoalCents)
+      : null,
   }
 }
 
-function isCalculation(value: unknown): value is EggCalculation {
-  if (!isRecord(value)) return false
-  return (
-    isEggTier(value.tier) &&
-    typeof value.saved === 'number' &&
-    Number.isFinite(value.saved) &&
-    typeof value.goal === 'number' &&
-    Number.isFinite(value.goal) &&
-    typeof value.extraSaved === 'number' &&
-    Number.isFinite(value.extraSaved) &&
-    typeof value.baseRate === 'number' &&
-    Number.isFinite(value.baseRate) &&
-    typeof value.bonusRate === 'number' &&
-    Number.isFinite(value.bonusRate) &&
-    typeof value.rareChance === 'number' &&
-    Number.isFinite(value.rareChance) &&
-    typeof value.bonusCapped === 'boolean' &&
-    typeof value.totalCapped === 'boolean'
-  )
+function normalizeCalculation(value: unknown): EggCalculation | null {
+  if (!isRecord(value) || !isEggTier(value.tier)) return null
+  const savedCents = legacyCents(value.savedCents, value.saved, 0)
+  const goalCents = positiveCents(value.goalCents, 0) || legacyCents(undefined, value.goal, 0)
+  if (!goalCents) return null
+
+  return {
+    tier: value.tier,
+    savedCents,
+    goalCents,
+    extraSavedCents: legacyCents(value.extraSavedCents, undefined, Math.max(0, savedCents - goalCents)),
+    baseRate: Number(value.baseRate),
+    bonusRate: Number(value.bonusRate),
+    rareChance: Number(value.rareChance),
+    bonusCapped: value.bonusCapped === true,
+    totalCapped: value.totalCapped === true,
+  }
 }
 
 function normalizeEgg(value: unknown): EggRecord | null {
   if (!isRecord(value) || !isEggTier(value.tier)) return null
+  const savedCents = legacyCents(value.savedCents, value.saved, 0)
+  const goalCents = positiveCents(value.goalCents, 0) || legacyCents(undefined, value.goal, 0)
   if (
     typeof value.id !== 'string' ||
     typeof value.settlementId !== 'string' ||
@@ -243,10 +260,7 @@ function normalizeEgg(value: unknown): EggRecord | null {
     typeof value.monthLabel !== 'string' ||
     typeof value.awardedAt !== 'string' ||
     Number.isNaN(new Date(value.awardedAt).getTime()) ||
-    typeof value.saved !== 'number' ||
-    !Number.isFinite(value.saved) ||
-    typeof value.goal !== 'number' ||
-    !Number.isFinite(value.goal) ||
+    goalCents <= 0 ||
     typeof value.baseRate !== 'number' ||
     !Number.isFinite(value.baseRate) ||
     typeof value.bonusRate !== 'number' ||
@@ -273,8 +287,8 @@ function normalizeEgg(value: unknown): EggRecord | null {
     monthKey: value.monthKey,
     monthLabel: value.monthLabel,
     tier: value.tier,
-    saved: value.saved,
-    goal: value.goal,
+    savedCents,
+    goalCents,
     baseRate: value.baseRate,
     bonusRate: value.bonusRate,
     rareChance: value.rareChance,
@@ -285,23 +299,25 @@ function normalizeEgg(value: unknown): EggRecord | null {
     spiritId,
     spiritRarity: isRarity(value.spiritRarity) ? value.spiritRarity : null,
     isNewSpirit: typeof value.isNewSpirit === 'boolean' ? value.isNewSpirit : null,
+    demo: value.demo === true,
   }
 }
 
 function normalizeSettlement(value: unknown): SettlementRecord | null {
   if (!isRecord(value)) return null
+  const budgetCents =
+    positiveCents(value.budgetCents, 0) || legacyCents(undefined, value.budget, 0)
+  const spentCents = legacyCents(value.spentCents, value.spent, -1)
+  const savedCents = legacyCents(value.savedCents, value.saved, 0)
+  const goalCents = positiveCents(value.goalCents, 0) || legacyCents(undefined, value.goal, 0)
+
   if (
     typeof value.id !== 'string' ||
     typeof value.monthKey !== 'string' ||
     typeof value.monthLabel !== 'string' ||
-    typeof value.budget !== 'number' ||
-    !Number.isFinite(value.budget) ||
-    typeof value.spent !== 'number' ||
-    !Number.isFinite(value.spent) ||
-    typeof value.saved !== 'number' ||
-    !Number.isFinite(value.saved) ||
-    typeof value.goal !== 'number' ||
-    !Number.isFinite(value.goal) ||
+    budgetCents <= 0 ||
+    spentCents < 0 ||
+    goalCents <= 0 ||
     typeof value.hp !== 'number' ||
     !Number.isFinite(value.hp) ||
     typeof value.isOverspent !== 'boolean' ||
@@ -324,27 +340,44 @@ function normalizeSettlement(value: unknown): SettlementRecord | null {
     id: value.id,
     monthKey: value.monthKey,
     monthLabel: value.monthLabel,
-    budget: value.budget,
-    spent: value.spent,
-    saved: value.saved,
-    goal: value.goal,
+    budgetCents,
+    spentCents,
+    savedCents,
+    goalCents,
     hp: value.hp,
     isOverspent: value.isOverspent,
     hasEgg: value.hasEgg,
     noEggReason,
-    calculation: isCalculation(value.calculation) ? value.calculation : null,
+    calculation: normalizeCalculation(value.calculation),
     eggId: typeof value.eggId === 'string' ? value.eggId : null,
     settledAt: value.settledAt,
     demo: value.demo === true,
   }
 }
 
+function loadDemoSettlementIds(): Set<string> {
+  const stored = readJSON<unknown>(SETTLEMENTS_KEY, [])
+  if (!Array.isArray(stored)) return new Set()
+  return new Set(
+    stored
+      .filter(
+        (value): value is Record<string, unknown> =>
+          isRecord(value) && value.demo === true && typeof value.id === 'string',
+      )
+      .map((value) => value.id as string),
+  )
+}
+
 export function loadEggs(): EggRecord[] {
   const stored = readJSON<unknown>(EGGS_KEY, [])
   if (!Array.isArray(stored)) return []
+  const legacyDemoSettlements = loadDemoSettlementIds()
   return stored
     .map(normalizeEgg)
-    .filter((egg): egg is EggRecord => egg !== null)
+    .filter(
+      (egg): egg is EggRecord =>
+        egg !== null && !egg.demo && !legacyDemoSettlements.has(egg.settlementId),
+    )
     .sort((a, b) => new Date(b.awardedAt).getTime() - new Date(a.awardedAt).getTime())
 }
 
@@ -357,7 +390,7 @@ export function loadSettlements(): SettlementRecord[] {
   if (!Array.isArray(stored)) return []
   return stored
     .map(normalizeSettlement)
-    .filter((record): record is SettlementRecord => record !== null)
+    .filter((record): record is SettlementRecord => record !== null && !record.demo)
     .sort((a, b) => {
       const byMonth = a.monthKey.localeCompare(b.monthKey)
       return byMonth !== 0 ? byMonth : a.settledAt.localeCompare(b.settledAt)
@@ -368,21 +401,54 @@ function saveSettlements(records: SettlementRecord[]): void {
   writeJSON(SETTLEMENTS_KEY, records)
 }
 
+export function loadDemoEggs(): EggRecord[] {
+  const stored = readJSON<unknown>(DEMO_EGGS_KEY, [])
+  if (!Array.isArray(stored)) return []
+  return stored
+    .map(normalizeEgg)
+    .filter((egg): egg is EggRecord => egg !== null)
+    .map((egg) => ({ ...egg, demo: true }))
+    .sort((a, b) => new Date(b.awardedAt).getTime() - new Date(a.awardedAt).getTime())
+}
+
+function saveDemoEggs(eggs: EggRecord[]): void {
+  writeJSON(DEMO_EGGS_KEY, eggs)
+}
+
+export function loadDemoSettlements(): SettlementRecord[] {
+  const stored = readJSON<unknown>(DEMO_SETTLEMENTS_KEY, [])
+  if (!Array.isArray(stored)) return []
+  return stored
+    .map(normalizeSettlement)
+    .filter((record): record is SettlementRecord => record !== null)
+    .map((record) => ({ ...record, demo: true }))
+    .sort((a, b) => {
+      const byMonth = a.monthKey.localeCompare(b.monthKey)
+      return byMonth !== 0 ? byMonth : a.settledAt.localeCompare(b.settledAt)
+    })
+}
+
+function saveDemoSettlements(records: SettlementRecord[]): void {
+  writeJSON(DEMO_SETTLEMENTS_KEY, records)
+}
+
 function createEgg(
   settlementId: string,
   monthKey: string,
   monthLabel: string,
   calculation: EggCalculation,
   awardedAt: Date,
+  demo: boolean,
 ): EggRecord {
+  const suffix = demo ? 'demo' : 'formal'
   return {
-    id: crypto.randomUUID(),
+    id: `egg:${monthKey}:${suffix}`,
     settlementId,
     monthKey,
     monthLabel,
     tier: calculation.tier,
-    saved: calculation.saved,
-    goal: calculation.goal,
+    savedCents: calculation.savedCents,
+    goalCents: calculation.goalCents,
     baseRate: calculation.baseRate,
     bonusRate: calculation.bonusRate,
     rareChance: calculation.rareChance,
@@ -393,22 +459,22 @@ function createEgg(
     spiritId: null,
     spiritRarity: null,
     isNewSpirit: null,
+    demo,
   }
 }
 
 interface SettleOptions {
-  demo?: boolean
   now?: Date
   bills?: Bill[]
   settings?: IslandSettings
 }
 
-export function settleMonth(monthDate = new Date(), options: SettleOptions = {}): SettlementRecord | null {
+function buildSettlement(
+  monthDate: Date,
+  options: SettleOptions,
+  demo: boolean,
+): { record: SettlementRecord; egg: EggRecord | null } | null {
   const monthKey = getMonthKey(monthDate)
-  const settlements = loadSettlements()
-  const existing = settlements.find((record) => record.monthKey === monthKey)
-  if (existing) return existing
-
   const bills = options.bills ?? loadBills()
   const settings = options.settings ?? loadSettings()
   const summary = summarizeMonth(bills, settings, monthDate)
@@ -416,14 +482,16 @@ export function settleMonth(monthDate = new Date(), options: SettleOptions = {})
 
   const now = options.now ?? new Date()
   const preview = previewSettlement(summary, settings, monthDate)
+  const suffix = demo ? 'demo' : 'formal'
+  const id = `settlement:${monthKey}:${suffix}`
   const record: SettlementRecord = {
-    id: crypto.randomUUID(),
+    id,
     monthKey,
     monthLabel: summary.monthLabel,
-    budget: settings.monthlyBudget,
-    spent: summary.spent,
-    saved: preview.saved,
-    goal: settings.savingsGoal,
+    budgetCents: settings.monthlyBudgetCents,
+    spentCents: summary.spentCents,
+    savedCents: preview.savedCents,
+    goalCents: settings.savingsGoalCents,
     hp: summary.hp,
     isOverspent: summary.isOverspent,
     hasEgg: preview.hasEgg,
@@ -431,23 +499,75 @@ export function settleMonth(monthDate = new Date(), options: SettleOptions = {})
     calculation: preview.calculation,
     eggId: null,
     settledAt: now.toISOString(),
-    demo: options.demo === true,
+    demo,
   }
 
-  if (preview.calculation) {
-    const egg = createEgg(
-      record.id,
-      monthKey,
-      summary.monthLabel,
-      preview.calculation,
-      now,
-    )
-    record.eggId = egg.id
-    saveEggs([egg, ...loadEggs()])
-  }
+  const egg = preview.calculation
+    ? createEgg(
+        record.id,
+        monthKey,
+        summary.monthLabel,
+        preview.calculation,
+        now,
+        demo,
+      )
+    : null
+  if (egg) record.eggId = egg.id
+  return { record, egg }
+}
 
-  saveSettlements([...loadSettlements(), record])
-  return record
+export function settleMonth(
+  monthDate = new Date(),
+  options: SettleOptions = {},
+): SettlementRecord | null {
+  const monthKey = getMonthKey(monthDate)
+  const settlements = loadSettlements()
+  const existing = settlements.find((record) => record.monthKey === monthKey)
+  if (existing) return existing
+
+  const built = buildSettlement(monthDate, options, false)
+  if (!built) return null
+
+  if (built.egg) {
+    const eggs = loadEggs()
+    const existingEgg = eggs.find((egg) => egg.id === built.egg?.id)
+    saveEggs(existingEgg ? eggs : [built.egg, ...eggs])
+  }
+  saveSettlements([...settlements, built.record])
+  return built.record
+}
+
+export function settleDemoMonth(
+  monthDate = new Date(),
+  options: SettleOptions = {},
+): SettlementRecord | null {
+  const monthKey = getMonthKey(monthDate)
+  const settlements = loadDemoSettlements()
+  const existing = settlements.find((record) => record.monthKey === monthKey)
+  if (existing) return existing
+
+  const built = buildSettlement(monthDate, options, true)
+  if (!built) return null
+
+  if (built.egg) {
+    const eggs = loadDemoEggs()
+    const existingEgg = eggs.find((egg) => egg.id === built.egg?.id)
+    saveDemoEggs(existingEgg ? eggs : [built.egg, ...eggs])
+  }
+  saveDemoSettlements([...settlements, built.record])
+  return built.record
+}
+
+export function resetDemoMonth(monthKey: string): boolean {
+  const settlements = loadDemoSettlements()
+  const record = settlements.find((item) => item.monthKey === monthKey)
+  if (!record) return false
+  const eggs = loadDemoEggs().filter(
+    (egg) => egg.settlementId !== record.id && egg.id !== record.eggId,
+  )
+  saveDemoEggs(eggs)
+  saveDemoSettlements(settlements.filter((item) => item.monthKey !== monthKey))
+  return true
 }
 
 export function settlePendingMonths(now = new Date()): SettlementRecord[] {
@@ -476,38 +596,44 @@ export function settlePendingMonths(now = new Date()): SettlementRecord[] {
   return created
 }
 
-function loadOwnedSpiritIds(): Set<string> {
-  const raw = readJSON<unknown>(SUMMON_KEY, {})
-  if (!isRecord(raw) || !isRecord(raw.owned)) return new Set()
-  return new Set(Object.keys(raw.owned))
-}
-
-function addOwnedSpirit(spiritId: string): void {
-  const raw = readJSON<unknown>(SUMMON_KEY, {})
-  const state = isRecord(raw) ? { ...raw } : {}
-  const owned = isRecord(state.owned) ? { ...state.owned } : {}
-  if (owned[spiritId]) return
-  owned[spiritId] = { count: 1 }
-  state.owned = owned
-  writeJSON(SUMMON_KEY, state)
+function hashString(input: string): number {
+  let hash = 2166136261
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
 }
 
 function hatchSpirit(egg: EggRecord): { spirit: Spirit; isNew: boolean } {
-  const wantRare = Math.random() < egg.rareChance
-  const wantedRarity: Rarity = wantRare ? 'rare' : 'normal'
-  const rarityPool = CATALOG.filter((spirit) => spirit.rarity === wantedRarity)
-  const pool =
-    rarityPool.length > 0 ? rarityPool : CATALOG.filter((spirit) => spirit.rarity === 'normal')
-  const owned = loadOwnedSpiritIds()
-  const fresh = pool.filter((spirit) => !owned.has(spirit.id))
-  const candidates = fresh.length > 0 ? fresh : pool
-  const spirit = candidates[Math.floor(Math.random() * candidates.length)] ?? CATALOG[0]
-  const isNew = !owned.has(spirit.id)
-  if (isNew) addOwnedSpirit(spirit.id)
-  return { spirit, isNew }
+  const rareRoll = (hashString(`${egg.id}:rare-roll`) % 10000) / 10000
+  const wantedRarity: Rarity = rareRoll < egg.rareChance ? 'rare' : 'normal'
+  const pool = CATALOG.filter((spirit) => spirit.rarity === wantedRarity)
+  const candidates = pool.length > 0 ? pool : CATALOG.filter((spirit) => spirit.rarity === 'normal')
+  const spirit =
+    candidates[hashString(`${egg.id}:spirit`) % candidates.length] ??
+    CATALOG[0]
+  return { spirit, isNew: !getOwnedSpiritIds().has(spirit.id) }
 }
 
-function performHatch(egg: EggRecord, now: Date): HatchResult {
+function performFormalHatch(egg: EggRecord, now: Date): HatchResult {
+  const { spirit } = hatchSpirit(egg)
+  const added = addSpiritToCollection(spirit.id)
+  return {
+    egg: {
+      ...egg,
+      hatched: true,
+      hatchedAt: now.toISOString(),
+      spiritId: spirit.id,
+      spiritRarity: spirit.rarity,
+      isNewSpirit: added,
+    },
+    spirit,
+    isNew: added,
+  }
+}
+
+function performDemoHatch(egg: EggRecord, now: Date): HatchResult {
   const { spirit, isNew } = hatchSpirit(egg)
   return {
     egg: {
@@ -554,7 +680,7 @@ export function syncEggHatch(now = new Date()): EggRecord[] {
     }
 
     if (hatchDays.length >= EGG_HATCH_DAYS) {
-      updated = performHatch(updated, now).egg
+      updated = performFormalHatch(updated, now).egg
       changed = true
     }
     return updated
@@ -564,17 +690,13 @@ export function syncEggHatch(now = new Date()): EggRecord[] {
   return next
 }
 
-export function demoHatch(eggId: string, now = new Date()): HatchResult | null {
-  const eggs = loadEggs()
+export function hatchDemoEgg(eggId: string, now = new Date()): HatchResult | null {
+  const eggs = loadDemoEggs()
   const index = eggs.findIndex((egg) => egg.id === eggId)
   if (index < 0 || eggs[index].hatched) return null
 
-  const result = performHatch(eggs[index], now)
+  const result = performDemoHatch(eggs[index], now)
   eggs[index] = result.egg
-  saveEggs(eggs)
+  saveDemoEggs(eggs)
   return result
-}
-
-export function getCurrentPreview(summary: MonthSummary, settings: IslandSettings): EggPreview {
-  return previewSettlement(summary, settings)
 }

@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { CATEGORIES } from '../data/categories'
-import { RARITY_LABEL } from '../data/catalog'
-import { formatYuan, type Bill } from '../lib/island'
-import { getGuardian, type SummonResult } from '../lib/summon'
+import { WISH_THRESHOLD_CENTS } from '../data/constants'
+import type { Spirit } from '../data/catalog'
+import type { Bill } from '../lib/island'
+import { formatCents } from '../lib/money'
+import { getGuardian } from '../lib/summon'
 import { SpiritSprite } from './Codex'
 
 const CATEGORY_NAMES = new Map(CATEGORIES.map((category) => [category.id, category.name]))
@@ -14,9 +16,6 @@ const ANIMATION_STYLES = `
 .ma-monster-inner { animation: ma-bob 1.4s ease-in-out 820ms infinite; }
 .ma-impact { animation: ma-impact 620ms ease-out 720ms both; }
 .ma-hp { transition: width 820ms cubic-bezier(.4,0,.2,1); }
-.ma-evolve-old { animation: ma-fade-out 520ms ease-in 760ms both; }
-.ma-evolve-new { animation: ma-pop-in 720ms cubic-bezier(.2,.9,.3,1.25) 980ms both; }
-.ma-orb { animation: ma-float 1.7s ease-in-out infinite; }
 @keyframes ma-card-in {
   from { opacity: 0; transform: translateY(14px) scale(.97); }
   to { opacity: 1; transform: translateY(0) scale(1); }
@@ -43,29 +42,14 @@ const ANIMATION_STYLES = `
   70% { opacity: 1; transform: scale(.95) rotate(0); }
   100% { opacity: 0; transform: scale(1.35); }
 }
-@keyframes ma-fade-out {
-  from { opacity: 1; transform: scale(1); }
-  to { opacity: 0; transform: scale(.7) rotate(-8deg); }
-}
-@keyframes ma-pop-in {
-  0% { opacity: 0; transform: scale(.2) rotate(10deg); }
-  55% { opacity: 1; transform: scale(1.18) rotate(-3deg); }
-  100% { opacity: 1; transform: scale(1) rotate(0); }
-}
-@keyframes ma-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-5px); }
-}
 @media (prefers-reduced-motion: reduce) {
-  .ma-card, .ma-guardian, .ma-monster, .ma-monster-inner, .ma-impact,
-  .ma-evolve-old, .ma-evolve-new, .ma-orb { animation: none; }
+  .ma-card, .ma-guardian, .ma-monster, .ma-monster-inner, .ma-impact { animation: none; }
   .ma-hp { transition: none; }
-  .ma-evolve-old { opacity: 0; }
 }
 `
 
 interface MonsterAnimationProps {
-  result: SummonResult
+  monster: Spirit
   bill: Bill
   hpBefore: number
   hpAfter: number
@@ -107,40 +91,8 @@ function IslandGuardian() {
   )
 }
 
-function SummonedEmblem({ kind }: { kind: 'energy' | 'wish' }) {
-  if (kind === 'energy') {
-    return (
-      <div className="ma-orb flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-[#bfe4ea] to-[#7fc8d9] shadow-inner">
-        <svg viewBox="0 0 32 32" aria-hidden="true" className="h-7 w-7">
-          <path
-            d="M17.5 3 8 18h6.5L14 29l9.5-15.5H17Z"
-            fill="#fffaf0"
-            stroke="#2f4147"
-            strokeWidth="1.2"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </div>
-    )
-  }
-  return (
-    <div className="ma-orb flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-[#ffe2a8] to-[#f5c95d] shadow-inner">
-      <svg viewBox="0 0 32 32" aria-hidden="true" className="h-7 w-7">
-        <circle cx="16" cy="16" r="10" fill="#fffaf0" stroke="#b8831f" strokeWidth="1.4" />
-        <path
-          d="M16 9.5v13M12.8 12.4h5.4a2.4 2.4 0 1 1 0 4.8h-4.4a2.4 2.4 0 1 0 0 4.8h5.6"
-          fill="none"
-          stroke="#b8831f"
-          strokeWidth="1.4"
-          strokeLinecap="round"
-        />
-      </svg>
-    </div>
-  )
-}
-
 export default function MonsterAnimation({
-  result,
+  monster,
   bill,
   hpBefore,
   hpAfter,
@@ -162,39 +114,23 @@ export default function MonsterAnimation({
     }
   }, [])
 
-  const spirit = result.spirit
-  const evolvedTo = result.evolvedTo
-  const guardian = getGuardian(spirit?.id)
-  const isFight = result.kind === 'new' || result.kind === 'duplicate' || result.kind === 'evolve'
+  const guardian = getGuardian(monster.id)
   const hpDelta = Math.max(0, hpBefore - hpAfter)
   const barWidth = Math.max(0, Math.min(100, drained ? hpAfter : hpBefore))
-
-  let headline = ''
-  let subline = ''
-  if (result.kind === 'new' && spirit) {
-    headline = `新岛民：${spirit.name}`
-    subline = '精灵从账单里跳出来，图鉴 +1。'
-  } else if (result.kind === 'duplicate' && spirit) {
-    headline = `又遇见 ${spirit.name}`
-    subline = `第 ${result.count ?? 2} 次相遇，重复的相遇也会被记住。`
-  } else if (result.kind === 'evolve' && spirit && evolvedTo) {
-    headline = `进化成功！${spirit.name} → ${evolvedTo.name}`
-    subline = '三次相遇的缘分，长成了新形态。'
-  } else if (result.kind === 'energy') {
-    headline = `今日召唤已满 ${result.dailyLimit} 只`
-    subline = `多记的这笔账化作 +${result.energyGained} 岛屿能量。`
-  } else {
-    headline = '大额支出 · 许愿池待开放'
-    subline = '单笔 ≥100 元先不召唤精灵，愿望等许愿池上线再兑现。'
-  }
+  const headline = `怪物来袭 · ${monster.name}`
+  const subline =
+    bill.source === 'wish' && bill.amountCents >= WISH_THRESHOLD_CENTS
+      ? '愿望确认后，这笔大额消费变成了 Boss；守岛精灵迎了上去。'
+      : bill.source === 'wish'
+        ? '愿望确认后，这笔计划消费变成正式账单；守岛精灵迎了上去。'
+        : '这笔账单召唤出消费怪物，守岛精灵挡在前面。怪物只参与攻岛，不进图鉴。'
 
   return (
     <div
       role="status"
       aria-live="polite"
       data-monster-animation
-      data-kind={result.kind}
-      data-spirit-id={result.spirit?.id ?? ''}
+      data-monster-id={monster.id}
       data-hp-before={hpBefore}
       data-hp-after={hpAfter}
       className="pointer-events-none fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] z-40 flex justify-center px-4"
@@ -215,67 +151,42 @@ export default function MonsterAnimation({
           <div className="absolute bottom-1 left-6 h-2 w-8 rounded-full bg-white/40" />
           <div className="absolute bottom-2 right-10 h-1.5 w-6 rounded-full bg-white/35" />
 
-          {isFight && spirit ? (
-            <>
-              <div className="ma-guardian absolute bottom-2 left-[15%] h-14 w-14">
-                {guardian ? (
-                  <SpiritSprite spirit={guardian} className="h-full w-full" />
-                ) : (
-                  <IslandGuardian />
-                )}
-              </div>
+          <div className="ma-guardian absolute bottom-2 left-[15%] h-14 w-14">
+            {guardian ? (
+              <SpiritSprite spirit={guardian} className="h-full w-full" />
+            ) : (
+              <IslandGuardian />
+            )}
+          </div>
 
-              <div className="ma-monster absolute bottom-1.5 right-[17%] h-16 w-16">
-                <div className="ma-monster-inner h-full w-full">
-                  <div className={`relative h-full w-full ${result.kind === 'evolve' ? 'ma-evolve-old' : ''}`}>
-                    <SpiritSprite spirit={spirit} className="h-full w-full" />
-                  </div>
-                  {result.kind === 'evolve' && evolvedTo && (
-                    <div className="ma-evolve-new absolute inset-0">
-                      <SpiritSprite spirit={evolvedTo} className="h-full w-full" />
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="ma-impact absolute bottom-7 left-1/2 -translate-x-1/2">
-                <svg viewBox="0 0 40 40" aria-hidden="true" className="h-9 w-9">
-                  <path
-                    d="M20 2l3.4 10.2L33 8.6l-5.4 9.1L38 20l-10.4 2.3 5.4 9.1-9.6-3.6L20 38l-3.4-10.2L7 31.4l5.4-9.1L2 20l10.4-2.3L7 8.6l9.6 3.6Z"
-                    fill="#f5c95d"
-                    stroke="#c99325"
-                    strokeWidth="1.2"
-                    strokeLinejoin="round"
-                  />
-                  <circle cx="20" cy="20" r="4.2" fill="#fffaf0" stroke="#c99325" strokeWidth="1" />
-                </svg>
-              </div>
-            </>
-          ) : (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <SummonedEmblem kind={result.kind === 'wish' ? 'wish' : 'energy'} />
+          <div className="ma-monster absolute bottom-1.5 right-[17%] h-16 w-16">
+            <div className="ma-monster-inner h-full w-full">
+              <SpiritSprite spirit={monster} className="h-full w-full" />
             </div>
-          )}
+          </div>
+
+          <div className="ma-impact absolute bottom-7 left-1/2 -translate-x-1/2">
+            <svg viewBox="0 0 40 40" aria-hidden="true" className="h-9 w-9">
+              <path
+                d="M20 2l3.4 10.2L33 8.6l-5.4 9.1L38 20l-10.4 2.3 5.4 9.1-9.6-3.6L20 38l-3.4-10.2L7 31.4l5.4-9.1L2 20l10.4-2.3L7 8.6l9.6 3.6Z"
+                fill="#f5c95d"
+                stroke="#c99325"
+                strokeWidth="1.2"
+                strokeLinejoin="round"
+              />
+              <circle cx="20" cy="20" r="4.2" fill="#fffaf0" stroke="#c99325" strokeWidth="1" />
+            </svg>
+          </div>
         </div>
 
         <div className="px-4 pb-3 pt-2.5">
           <div className="flex items-center justify-between gap-2">
             <p className="text-[10px] font-semibold tracking-[0.16em] text-leaf">
-              {result.kind === 'energy'
-                ? 'ISLAND ENERGY'
-                : result.kind === 'wish'
-                  ? 'WISH POOL'
-                  : 'MONSTER ENCOUNTER'}
+              {bill.source === 'wish' ? 'WISH CONFIRMED' : 'MONSTER ENCOUNTER'}
             </p>
-            {spirit ? (
-              <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] text-ink/55">
-                {RARITY_LABEL[spirit.rarity]}
-              </span>
-            ) : (
-              <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] text-ink/55">
-                {CATEGORY_NAMES.get(bill.category)} · {formatYuan(bill.amount)} 元
-              </span>
-            )}
+            <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] text-ink/55">
+              {CATEGORY_NAMES.get(bill.category)} · {formatCents(bill.amountCents)} 元
+            </span>
           </div>
 
           <p className="mt-1 pr-8 text-sm font-semibold leading-snug text-ink">{headline}</p>
@@ -306,14 +217,9 @@ export default function MonsterAnimation({
             )}
           </div>
 
-          {isFight && spirit && (
-            <p className="mt-1.5 text-[10px] text-ink/35">
-              图鉴进度 {result.progress} / 32
-              {result.kind !== 'evolve' && result.count && result.count > 1
-                ? ` · 第 ${result.count} 次相遇`
-                : ''}
-            </p>
-          )}
+          <p className="mt-1.5 text-[10px] text-ink/35">
+            按本月累计支出统一扣血，与账单笔数无关；怪物只出场，不增加精灵收藏。
+          </p>
         </div>
       </div>
     </div>

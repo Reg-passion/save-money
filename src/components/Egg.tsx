@@ -1,16 +1,13 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { RARITY_LABEL, SPIRIT_BY_ID } from '../data/catalog'
 import { EGG_HATCH_DAYS } from '../data/constants'
 import {
-  demoHatch,
   EGG_TIER_LABEL,
   formatPercent,
-  loadEggs,
-  syncEggHatch,
   type EggRecord,
   type HatchResult,
 } from '../lib/egg'
-import { formatYuan } from '../lib/island'
+import { formatCents } from '../lib/money'
 import type { EggTier } from '../types'
 import { SpiritSprite } from './Codex'
 
@@ -118,7 +115,15 @@ function EggShell({ tier, progress }: { tier: EggTier; progress: number }) {
   )
 }
 
-function HatchBanner({ result, onClose }: { result: HatchResult; onClose: () => void }) {
+function HatchBanner({
+  result,
+  demo,
+  onClose,
+}: {
+  result: HatchResult
+  demo: boolean
+  onClose: () => void
+}) {
   return (
     <div
       role="status"
@@ -131,7 +136,11 @@ function HatchBanner({ result, onClose }: { result: HatchResult; onClose: () => 
         </p>
         <p className="mt-0.5 text-[11px] leading-relaxed text-ink/50">
           {RARITY_LABEL[result.spirit.rarity]}精灵 ·{' '}
-          {result.isNew ? '已加入图鉴' : '图鉴里已经有它了'}
+          {demo
+            ? '演示结果，不会写入正式图鉴'
+            : result.isNew
+              ? '已加入图鉴'
+              : '图鉴里已经有它了'}
         </p>
       </div>
       <button
@@ -146,26 +155,44 @@ function HatchBanner({ result, onClose }: { result: HatchResult; onClose: () => 
   )
 }
 
-export default function Egg() {
-  const [eggs, setEggs] = useState<EggRecord[]>(() => syncEggHatch())
+interface EggProps {
+  eggs: EggRecord[]
+  variant?: 'formal' | 'demo'
+  onDemoHatch?: (eggId: string) => HatchResult | null
+}
+
+export default function Egg({ eggs, variant = 'formal', onDemoHatch }: EggProps) {
   const [result, setResult] = useState<HatchResult | null>(null)
+  const titleId = useId()
+  const demo = variant === 'demo'
 
   function handleDemoHatch(eggId: string) {
-    const next = demoHatch(eggId)
+    if (!onDemoHatch) return
+    const next = onDemoHatch(eggId)
     if (!next) return
-    setEggs(loadEggs())
     setResult(next)
   }
 
   const waitingCount = eggs.filter((egg) => !egg.hatched).length
 
   return (
-    <section className="mt-4 rounded-3xl border border-ink/10 bg-white/60 p-4" aria-labelledby="egg-title">
+    <section
+      className="mt-4 rounded-3xl border border-ink/10 bg-white/60 p-4"
+      aria-labelledby={titleId}
+      data-egg-variant={variant}
+    >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[10px] font-semibold tracking-[0.3em] text-ink/35">EGG NEST</p>
-          <h3 id="egg-title" className="mt-1 text-sm font-bold text-ink">
-            孵化栏
+          <p className="text-[10px] font-semibold tracking-[0.3em] text-ink/35">
+            {demo ? 'DEMO NEST' : 'EGG NEST'}
+          </p>
+          <h3 id={titleId} className="mt-1 text-sm font-bold text-ink">
+            {demo ? '演示孵化栏' : '孵化栏'}
+            {demo && (
+              <span className="ml-1.5 rounded-full bg-ink/5 px-2 py-0.5 align-middle text-[10px] font-medium text-ink/40">
+                不写正式数据
+              </span>
+            )}
           </h3>
         </div>
         <span className="shrink-0 rounded-full bg-cream px-2.5 py-1 text-[11px] font-medium text-ink/50">
@@ -177,11 +204,17 @@ export default function Egg() {
         </span>
       </div>
 
-      {result && <div className="mt-3"><HatchBanner result={result} onClose={() => setResult(null)} /></div>}
+      {result && (
+        <div className="mt-3">
+          <HatchBanner result={result} demo={demo} onClose={() => setResult(null)} />
+        </div>
+      )}
 
       {eggs.length === 0 ? (
         <p className="mt-3 rounded-2xl border border-dashed border-ink/15 bg-white/45 px-4 py-6 text-center text-xs leading-relaxed text-ink/45">
-          还没有蛋。月底岛血 &gt; 0 且没有超预算，会收到 1 枚蛋。
+          {demo
+            ? '演示结算产生的蛋会放在这里，可随时重置，不影响正式结算与图鉴。'
+            : '还没有蛋。月底岛血 > 0 且没有超预算，会收到 1 枚蛋。'}
         </p>
       ) : (
         <ul className="mt-3 space-y-3">
@@ -214,11 +247,13 @@ export default function Egg() {
                         {egg.monthLabel} · 稀有判定 {formatPercent(egg.rareChance)}
                       </p>
                       <p className="mt-0.5 text-[11px] text-leaf">
-                        {egg.isNewSpirit === null
-                          ? '孵化记录已保存'
-                          : egg.isNewSpirit
-                            ? '已加入图鉴'
-                            : '图鉴里已经有它了'}
+                        {demo
+                          ? '演示记录 · 不会加入正式图鉴'
+                          : egg.isNewSpirit === null
+                            ? '孵化记录已保存'
+                            : egg.isNewSpirit
+                              ? '已加入图鉴'
+                              : '图鉴里已经有它了'}
                       </p>
                     </div>
                   </div>
@@ -243,7 +278,7 @@ export default function Egg() {
                       <span className="text-[10px] text-ink/40">{egg.monthLabel}</span>
                     </div>
                     <p className="mt-1.5 text-[11px] leading-relaxed text-ink/55">
-                      已省 <b className="font-semibold text-ink">{formatYuan(egg.saved)} 元</b> · 稀有判定{' '}
+                      已省 <b className="font-semibold text-ink">{formatCents(egg.savedCents)} 元</b> · 稀有判定{' '}
                       <b className="font-semibold text-ink">{formatPercent(egg.rareChance)}</b>
                     </p>
                     <div className="mt-2 flex items-baseline justify-between text-[10px] text-ink/45">
@@ -266,19 +301,23 @@ export default function Egg() {
                       />
                     </div>
                     <p className="mt-1.5 text-[10px] leading-relaxed text-ink/40">
-                      {progress === 0
-                        ? '每天记一笔，蛋壳裂一点；记满 3 天出精灵。'
-                        : `已经裂了 ${progress} 下，再记 ${EGG_HATCH_DAYS - progress} 天。`}
+                      {demo
+                        ? '演示蛋可以直接快进孵化，结果不会写入正式图鉴。'
+                        : progress === 0
+                          ? '每天记一笔，蛋壳裂一点；记满 3 天出精灵。'
+                          : `已经裂了 ${progress} 下，再记 ${EGG_HATCH_DAYS - progress} 天。`}
                     </p>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleDemoHatch(egg.id)}
-                  className="mt-2 min-h-11 w-full rounded-xl border border-ink/15 bg-white/70 px-3 text-xs font-medium text-ink/60 transition-colors hover:bg-white hover:text-ink"
-                >
-                  演示孵化
-                </button>
+                {demo && onDemoHatch && (
+                  <button
+                    type="button"
+                    onClick={() => handleDemoHatch(egg.id)}
+                    className="mt-2 min-h-11 w-full rounded-xl border border-ink/15 bg-white/70 px-3 text-xs font-medium text-ink/60 transition-colors hover:bg-white hover:text-ink"
+                  >
+                    演示孵化
+                  </button>
+                )}
               </li>
             )
           })}

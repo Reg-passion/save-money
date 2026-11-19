@@ -1,16 +1,12 @@
 import { useRef, useState, type FormEvent } from 'react'
 import { CATEGORIES } from '../data/categories'
-import {
-  calcHpCost,
-  formatYuan,
-  toDateTimeLocalValue,
-  type Bill,
-  type NewBillInput,
-} from '../lib/island'
+import type { ExpenseOutcome } from '../lib/expense'
+import { toDateTimeLocalValue, type NewBillInput } from '../lib/island'
+import { formatCents, parseYuanToCents } from '../lib/money'
 import type { CategoryId } from '../types'
 
 interface AddBillProps {
-  onAdd: (input: NewBillInput) => Bill
+  onAdd: (input: NewBillInput, planned: boolean) => ExpenseOutcome
 }
 
 export default function AddBill({ onAdd }: AddBillProps) {
@@ -18,22 +14,22 @@ export default function AddBill({ onAdd }: AddBillProps) {
   const [category, setCategory] = useState<CategoryId | null>(null)
   const [note, setNote] = useState('')
   const [time, setTime] = useState(() => toDateTimeLocalValue())
+  const [planned, setPlanned] = useState(false)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const amountRef = useRef<HTMLInputElement>(null)
   const categoryRef = useRef<HTMLFieldSetElement>(null)
 
-  const amountValue = Number(amount)
-  const hpPreview =
-    Number.isFinite(amountValue) && amountValue > 0 ? calcHpCost(amountValue) : null
+  const amountCents = parseYuanToCents(amount)
+  const goesToWish = planned
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
     setFeedback(null)
 
-    if (!Number.isFinite(amountValue) || amountValue <= 0) {
-      setError('先填一个大于 0 的金额')
+    if (amountCents === null) {
+      setError('先填一个大于 0、最多两位小数的金额')
       amountRef.current?.focus()
       return
     }
@@ -48,16 +44,28 @@ export default function AddBill({ onAdd }: AddBillProps) {
     }
 
     try {
-      const bill = onAdd({
-        amount: amountValue,
-        category,
-        note,
-        time: new Date(time).toISOString(),
-      })
-      setFeedback(`已记账：${formatYuan(bill.amount)} 元 · 岛扣 ${bill.hpCost} 点血`)
+      const outcome = onAdd(
+        {
+          amountCents,
+          category,
+          note,
+          time: new Date(time).toISOString(),
+        },
+        planned,
+      )
+      if (outcome.kind === 'wish') {
+        setFeedback(
+          `已放入许愿池：${formatCents(outcome.wish.amountCents)} 元。24 小时后才能确认入账，也可以提前取消。`,
+        )
+      } else {
+        setFeedback(
+          `已记账：${formatCents(outcome.bill.amountCents)} 元，消费怪物已经出现。`,
+        )
+      }
       setAmount('')
       setNote('')
       setCategory(null)
+      setPlanned(false)
       setTime(toDateTimeLocalValue())
     } catch (err) {
       setError(err instanceof Error ? err.message : '记账失败，再试一次')
@@ -68,10 +76,35 @@ export default function AddBill({ onAdd }: AddBillProps) {
     <section className="rounded-3xl border border-ink/10 bg-white/75 p-4">
       <div className="flex items-baseline justify-between gap-3">
         <h2 className="text-sm font-semibold text-ink">记一笔</h2>
-        <span className="text-[11px] text-ink/40">1 点血 = 15 元</span>
+        <span className="text-[11px] text-ink/40">月累计扣血 · 1 点 = 15 元</span>
       </div>
+      <p className="mt-1 text-[10px] leading-relaxed text-ink/35">
+        已发生的消费立即记账；标记为「计划购买」时，先进许愿池冷静 24 小时，确认后才会成为正式账单。
+      </p>
 
       <form aria-label="记一笔" className="mt-3 grid gap-3" onSubmit={handleSubmit}>
+        <div className="grid grid-cols-2 gap-1.5" role="group" aria-label="消费类型">
+          <button
+            type="button"
+            aria-pressed={!planned}
+            onClick={() => setPlanned(false)}
+            className={`h-10 rounded-xl text-xs font-medium transition-colors ${
+              !planned ? 'bg-leaf text-white' : 'bg-ink/5 text-ink/60 hover:bg-ink/10'
+            }`}
+          >
+            已发生
+          </button>
+          <button
+            type="button"
+            aria-pressed={planned}
+            onClick={() => setPlanned(true)}
+            className={`h-10 rounded-xl text-xs font-medium transition-colors ${
+              planned ? 'bg-[#D9B25F] text-white' : 'bg-ink/5 text-ink/60 hover:bg-ink/10'
+            }`}
+          >
+            计划购买
+          </button>
+        </div>
         <label className="block">
           <span className="text-[11px] font-medium text-ink/45">金额（元）</span>
           <div className="mt-1.5 flex items-center gap-2 rounded-2xl border border-ink/10 bg-white px-4 py-2.5 focus-within:border-leaf">
@@ -88,9 +121,9 @@ export default function AddBill({ onAdd }: AddBillProps) {
               required
               className="w-full min-w-0 bg-transparent text-2xl font-bold text-ink outline-none placeholder:text-ink/20"
             />
-            {hpPreview !== null && (
+            {amountCents !== null && (
               <span className="shrink-0 rounded-full bg-ink/5 px-2 py-1 text-[11px] font-medium text-ink/50">
-                扣 {hpPreview} 点血
+                {goesToWish ? '先进许愿池' : '按本月累计扣血'}
               </span>
             )}
           </div>
@@ -140,9 +173,11 @@ export default function AddBill({ onAdd }: AddBillProps) {
 
         <button
           type="submit"
-          className="h-12 rounded-xl bg-leaf text-sm font-semibold text-white transition-colors hover:bg-[#549A5F]"
+          className={`h-12 rounded-xl text-sm font-semibold text-white transition-colors ${
+            goesToWish ? 'bg-[#C9A24A] hover:bg-[#B8933F]' : 'bg-leaf hover:bg-[#549A5F]'
+          }`}
         >
-          记下这一笔
+          {goesToWish ? '放进许愿池' : '记下这一笔'}
         </button>
 
         <p

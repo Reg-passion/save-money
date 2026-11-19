@@ -9,7 +9,7 @@ import {
   type Rarity,
   type Spirit,
 } from '../data/catalog'
-import { getSummonSummary, type SummonSummary } from '../lib/summon'
+import { getSpiritCollectionSummary, type SpiritCollectionSummary } from '../lib/summon'
 
 const INK = '#2f4147'
 const CREAM = '#fffaf0'
@@ -366,23 +366,22 @@ export function SpiritSprite({ spirit, silhouette = false, className }: SpiritSp
 
 const CATEGORY_NAMES = new Map(CATEGORIES.map((category) => [category.id, category.name]))
 
-function evolutionCopy(spirit: Spirit, entry?: { count: number }, evolved?: boolean): string {
+function evolutionCopy(spirit: Spirit): string {
   if (!spirit.evolvesTo) return '已是最终形态'
   const target = SPIRIT_BY_ID[spirit.evolvesTo]
-  if (!entry) return `相遇 3 次后进化为「${target?.name ?? '???'}」`
-  if (evolved) return `已进化为「${target?.name ?? '???'}」`
-  return `再相遇 ${Math.max(1, 3 - entry.count)} 次进化为「${target?.name ?? '???'}」`
+  return `形态线索：${target?.name ?? '???'}`
 }
 
 export default function Codex() {
-  const [summary, setSummary] = useState<SummonSummary>(() => getSummonSummary())
+  const [summary, setSummary] = useState<SpiritCollectionSummary>(() =>
+    getSpiritCollectionSummary(),
+  )
   const [activeId, setActiveId] = useState<string | null>(null)
   const dialogRef = useRef<HTMLDialogElement>(null)
   const titleId = useId()
 
   const active = activeId ? SPIRIT_BY_ID[activeId] : undefined
   const activeEntry = active ? summary.owned[active.id] : undefined
-  const activeEvolved = active ? Boolean(summary.evolved[active.id]) : false
   const percentage = Math.round((summary.progress / summary.total) * 100)
 
   useEffect(() => {
@@ -424,7 +423,7 @@ export default function Codex() {
   }, [active])
 
   function openDetail(id: string) {
-    setSummary(getSummonSummary())
+    setSummary(getSpiritCollectionSummary())
     setActiveId(id)
   }
 
@@ -437,7 +436,7 @@ export default function Codex() {
         <div className="mt-1 flex items-end justify-between gap-3">
           <div>
             <h1 className="text-xl font-bold text-ink">精灵图鉴</h1>
-            <p className="mt-1 text-sm text-ink/55">记一笔，就多一位岛民。</p>
+            <p className="mt-1 text-sm text-ink/55">精灵来自月底的蛋，账单只会引来怪物。</p>
           </div>
           <p className="shrink-0 text-lg font-bold text-ink">
             {summary.progress}
@@ -460,25 +459,18 @@ export default function Codex() {
           />
         </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <div className="rounded-2xl border border-ink/10 bg-white/65 px-3 py-2">
-            <p className="text-[10px] text-ink/45">今日召唤</p>
-            <p className="text-sm font-semibold text-ink">
-              {summary.todayCount}
-              <span className="text-xs font-normal text-ink/40"> / {summary.dailyLimit} 只</span>
-            </p>
+        <div className="mt-3 rounded-2xl border border-ink/10 bg-white/65 px-3 py-2">
+          <div className="flex items-baseline justify-between gap-2">
+            <p className="text-[10px] text-ink/45">精灵来源</p>
+            <p className="text-sm font-semibold text-ink">月度结算的蛋</p>
           </div>
-          <div className="rounded-2xl border border-ink/10 bg-white/65 px-3 py-2">
-            <p className="text-[10px] text-ink/45">岛屿能量</p>
-            <p className="text-sm font-semibold text-ink">
-              {summary.energy}
-              <span className="text-xs font-normal text-ink/40"> 点</span>
-            </p>
-          </div>
+          <p className="mt-0.5 text-[10px] leading-relaxed text-ink/40">
+            消费账单只生成攻岛的怪物，不会直接增加收藏；精灵只能孵出来。
+          </p>
         </div>
         <p className="mt-2 text-[11px] text-ink/40">
           普通 {RARITY_COUNTS.normal} · 稀有 {RARITY_COUNTS.rare} · 隐藏 {RARITY_COUNTS.hidden}
-          ；每天前 {summary.dailyLimit} 只入图鉴，多记的账会变成能量。
+          ；每月结算最多得 1 枚蛋，记满 3 个自然日孵化。
         </p>
       </header>
 
@@ -593,20 +585,20 @@ export default function Codex() {
 
             <dl className="mt-5 space-y-3 text-xs">
               <div>
-                <dt className="font-semibold text-ink/45">出现条件</dt>
+                <dt className="font-semibold text-ink/45">图鉴线索</dt>
                 <dd className="mt-0.5 leading-relaxed text-ink/75">{active.hint}</dd>
               </div>
               <div className="flex gap-6">
                 <div>
-                  <dt className="font-semibold text-ink/45">相遇次数</dt>
+                  <dt className="font-semibold text-ink/45">获得次数</dt>
                   <dd className="mt-0.5 text-sm font-semibold text-ink">
-                    {activeEntry ? `${activeEntry.count} 次` : '还没遇见'}
+                    {activeEntry ? `${activeEntry.count} 次` : '还没获得'}
                   </dd>
                 </div>
                 <div className="min-w-0">
                   <dt className="font-semibold text-ink/45">进化</dt>
                   <dd className="mt-0.5 text-ink/75">
-                    {evolutionCopy(active, activeEntry, activeEvolved)}
+                    {evolutionCopy(active)}
                   </dd>
                 </div>
               </div>

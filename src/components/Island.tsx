@@ -1,11 +1,11 @@
-import type { FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import {
-  formatYuan,
   WEATHER_LABEL,
   type IslandSettings,
   type MonthSummary,
   type Weather,
 } from '../lib/island'
+import { centsToInputValue, formatCents, parseYuanToCents } from '../lib/money'
 
 interface IslandProps {
   settings: IslandSettings
@@ -319,24 +319,26 @@ function IslandScene({ hp, weather }: { hp: number; weather: Weather }) {
 }
 
 export default function Island({ settings, summary, weather, onSaveSettings }: IslandProps) {
+  const [settingsMessage, setSettingsMessage] = useState<string | null>(null)
+
   function handleSettingsSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
     const islandName = String(form.get('islandName') ?? '').trim()
-    const monthlyBudget = Number(form.get('monthlyBudget'))
-    const savingsGoal = Number(form.get('savingsGoal'))
+    const monthlyBudgetCents = parseYuanToCents(String(form.get('monthlyBudget') ?? ''))
+    const savingsGoalCents = parseYuanToCents(String(form.get('savingsGoal') ?? ''))
 
-    if (
-      !islandName ||
-      !Number.isFinite(monthlyBudget) ||
-      monthlyBudget <= 0 ||
-      !Number.isFinite(savingsGoal) ||
-      savingsGoal <= 0
-    ) {
+    if (!islandName || monthlyBudgetCents === null || savingsGoalCents === null) {
+      setSettingsMessage('预算、目标和岛名都需要填写有效值。')
       return
     }
 
-    onSaveSettings({ islandName, monthlyBudget, savingsGoal })
+    try {
+      onSaveSettings({ islandName, monthlyBudgetCents, savingsGoalCents })
+      setSettingsMessage('设定已保存。')
+    } catch {
+      setSettingsMessage('设定没有保存成功，请检查浏览器存储权限。')
+    }
   }
 
   return (
@@ -346,8 +348,8 @@ export default function Island({ settings, summary, weather, onSaveSettings }: I
           <p className="text-[10px] font-semibold tracking-[0.35em] text-ink/40">MONEY ISLAND</p>
           <h1 className="mt-1 truncate text-2xl font-bold text-ink">{settings.islandName}</h1>
           <p className="mt-1 text-[11px] leading-relaxed text-ink/45">
-            {summary.monthLabel} · 日均预算 {formatYuan(summary.dailyBudget)} 元 · 存钱目标{' '}
-            {formatYuan(settings.savingsGoal)} 元
+            {summary.monthLabel} · 日均预算 {formatCents(summary.dailyBudgetCents)} 元 · 存钱目标{' '}
+            {formatCents(settings.savingsGoalCents)} 元
           </p>
         </div>
         <span
@@ -382,13 +384,13 @@ export default function Island({ settings, summary, weather, onSaveSettings }: I
         </div>
         <div className="mt-3 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs text-ink/55">
           <span>
-            本月已花 <b className="text-sm font-semibold text-ink">{formatYuan(summary.spent)}</b> /{' '}
-            {formatYuan(settings.monthlyBudget)} 元
+            本月已花 <b className="text-sm font-semibold text-ink">{formatCents(summary.spentCents)}</b> /{' '}
+            {formatCents(settings.monthlyBudgetCents)} 元
           </span>
           <span className={summary.isOverspent ? 'font-medium text-[#B14E3D]' : ''}>
             {summary.isOverspent
-              ? `超支 ${formatYuan(Math.abs(summary.remaining))} 元`
-              : `还剩 ${formatYuan(summary.remaining)} 元`}
+              ? `超支 ${formatCents(Math.abs(summary.remainingCents))} 元`
+              : `还剩 ${formatCents(summary.remainingCents)} 元`}
           </span>
         </div>
       </div>
@@ -399,7 +401,7 @@ export default function Island({ settings, summary, weather, onSaveSettings }: I
           role="status"
         >
           {summary.isOverspent
-            ? `本月已超预算 ${formatYuan(Math.abs(summary.remaining))} 元，岛进入修补模式；下月自动重开，图鉴不清零。`
+            ? `本月已超预算 ${formatCents(Math.abs(summary.remainingCents))} 元，岛进入修补模式；下月自动重开，图鉴不清零。`
             : '岛血量为 0，进入修补模式；下月自动重开，图鉴不清零。'}
         </div>
       )}
@@ -431,7 +433,7 @@ export default function Island({ settings, summary, weather, onSaveSettings }: I
                 type="number"
                 min="0.01"
                 step="0.01"
-                defaultValue={settings.monthlyBudget}
+                defaultValue={centsToInputValue(settings.monthlyBudgetCents)}
                 required
                 className="h-12 w-full rounded-xl border border-ink/10 bg-white px-3 text-base text-ink outline-none focus:border-leaf"
               />
@@ -443,7 +445,7 @@ export default function Island({ settings, summary, weather, onSaveSettings }: I
                 type="number"
                 min="0.01"
                 step="0.01"
-                defaultValue={settings.savingsGoal}
+                defaultValue={centsToInputValue(settings.savingsGoalCents)}
                 required
                 className="h-12 w-full rounded-xl border border-ink/10 bg-white px-3 text-base text-ink outline-none focus:border-leaf"
               />
@@ -455,6 +457,9 @@ export default function Island({ settings, summary, weather, onSaveSettings }: I
           >
             保存设定
           </button>
+          <p role="status" className="min-h-4 text-center text-[11px] text-ink/45">
+            {settingsMessage ?? ''}
+          </p>
         </form>
       </details>
     </section>
